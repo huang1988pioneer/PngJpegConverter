@@ -233,7 +233,7 @@ public partial class MainWindow : Window
 
     private static async Task<DownloadedImage> DownloadImageAsync(Uri uri)
     {
-        Exception? lastError = null;
+        var errors = new List<string>();
 
         foreach (var candidate in GetImageUriCandidates(uri))
         {
@@ -244,19 +244,21 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                lastError = ex;
+                errors.Add($"{candidate}：{ex.Message}");
             }
         }
 
-        throw new InvalidOperationException(lastError?.Message ?? "無法下載圖片。");
+        throw new InvalidOperationException(errors.Count == 0
+            ? "無法下載圖片。"
+            : string.Join(Environment.NewLine, errors));
     }
 
     private static async Task<string> DownloadImageCandidateAsync(Uri uri)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        request.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
-        request.Headers.TryAddWithoutValidation("Referer", $"{uri.Scheme}://{uri.Host}/");
+        request.Headers.TryAddWithoutValidation("Accept", "image/jpeg,image/png,image/webp,image/bmp,image/gif,image/*,*/*;q=0.8");
+        request.Headers.TryAddWithoutValidation("Referer", GetRefererForImageHost(uri));
 
         using var response = await HttpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
@@ -304,16 +306,18 @@ public partial class MainWindow : Window
 
     private static IEnumerable<Uri> GetImageUriCandidates(Uri uri)
     {
-        yield return uri;
-
-        var cleanedUri = TryGetCleanImageUri(uri);
-        if (cleanedUri is not null && !cleanedUri.AbsoluteUri.Equals(uri.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+        foreach (var cleanedUri in GetCleanImageUris(uri))
         {
-            yield return cleanedUri;
+            if (!cleanedUri.AbsoluteUri.Equals(uri.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return cleanedUri;
+            }
         }
+
+        yield return uri;
     }
 
-    private static Uri? TryGetCleanImageUri(Uri uri)
+    private static IEnumerable<Uri> GetCleanImageUris(Uri uri)
     {
         var absolutePath = uri.GetLeftPart(UriPartial.Path);
         var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif" };
@@ -329,11 +333,16 @@ public partial class MainWindow : Window
             var endIndex = index + extension.Length;
             if (endIndex < absolutePath.Length && absolutePath[endIndex] == '@')
             {
-                return new Uri(absolutePath[..endIndex]);
+                yield return new Uri(absolutePath[..endIndex]);
             }
         }
+    }
 
-        return null;
+    private static string GetRefererForImageHost(Uri uri)
+    {
+        return uri.Host.EndsWith("hdslb.com", StringComparison.OrdinalIgnoreCase)
+            ? "https://www.bilibili.com/"
+            : $"{uri.Scheme}://{uri.Host}/";
     }
 
     private async Task ConvertAllAsync()

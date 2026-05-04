@@ -1,4 +1,4 @@
-# PNG 轉 JPEG
+# avaloniaPNGtoJPEGconverter
 
 一款基於 Avalonia 的桌面小程式，可選取 PNG 圖片並轉換成 JPEG。
 

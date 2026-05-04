@@ -1,0 +1,135 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PngToJpegConverter.MainWindow"
+        Title="PNG 轉 JPEG"
+        Width="760"
+        Height="520"
+        MinWidth="640"
+        MinHeight="460"
+        Background="#F6F7F9"
+        CanResize="True">
+  <Grid RowDefinitions="Auto,*" Margin="28" RowSpacing="22">
+    <StackPanel Spacing="6">
+      <TextBlock Text="PNG 轉 JPEG"
+                 FontSize="28"
+                 FontWeight="SemiBold"
+                 Foreground="#171A1F" />
+      <TextBlock Text="選取 PNG 圖片，設定輸出品質，快速轉成 JPEG。"
+                 FontSize="14"
+                 Foreground="#626B79" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="2*,3*" ColumnSpacing="22">
+      <Border Background="White"
+              BorderBrush="#D8DDE5"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="18">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+          <StackPanel Spacing="10">
+            <TextBlock Text="來源圖片"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="#252A32" />
+            <Button x:Name="ChooseButton"
+                    Content="選擇 PNG 檔"
+                    HorizontalAlignment="Stretch"
+                    Height="38"
+                    Click="ChooseButton_Click" />
+            <TextBlock x:Name="SourcePathText"
+                       Text="尚未選擇檔案"
+                       TextWrapping="Wrap"
+                       Foreground="#626B79" />
+          </StackPanel>
+
+          <Border Grid.Row="1"
+                  Background="#FAFBFC"
+                  BorderBrush="#E2E6ED"
+                  BorderThickness="1"
+                  CornerRadius="8"
+                  Padding="12">
+            <Image x:Name="PreviewImage"
+                   Stretch="Uniform" />
+          </Border>
+
+          <StackPanel Grid.Row="2" Spacing="8">
+            <TextBlock Text="JPEG 品質"
+                       FontWeight="SemiBold"
+                       Foreground="#252A32" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <Slider x:Name="QualitySlider"
+                      Minimum="1"
+                      Maximum="100"
+                      Value="90"
+                      TickFrequency="1"
+                      IsSnapToTickEnabled="True"
+                      PropertyChanged="QualitySlider_PropertyChanged" />
+              <TextBlock x:Name="QualityText"
+                         Grid.Column="1"
+                         Text="90%"
+                         Width="44"
+                         VerticalAlignment="Center"
+                         TextAlignment="Right"
+                         Foreground="#252A32" />
+            </Grid>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1"
+              Background="White"
+              BorderBrush="#D8DDE5"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="22">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="18">
+          <StackPanel Spacing="8">
+            <TextBlock Text="輸出設定"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="#252A32" />
+            <TextBlock Text="預設會把 JPEG 存在原 PNG 同一個資料夾，檔名相同、副檔名改為 .jpg。"
+                       TextWrapping="Wrap"
+                       Foreground="#626B79" />
+          </StackPanel>
+
+          <StackPanel Grid.Row="1"
+                      VerticalAlignment="Center"
+                      Spacing="12">
+            <TextBlock x:Name="ImageInfoText"
+                       Text="等待選取圖片"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       TextAlignment="Center"
+                       Foreground="#252A32" />
+            <TextBlock x:Name="OutputPathText"
+                       Text=""
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       Foreground="#626B79" />
+            <TextBlock x:Name="StatusText"
+                       Text=""
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       Foreground="#1F7A4D" />
+          </StackPanel>
+
+          <StackPanel Grid.Row="2" Spacing="10">
+            <Button x:Name="ConvertButton"
+                    Content="轉換成 JPEG"
+                    Height="42"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"
+                    Click="ConvertButton_Click" />
+            <Button x:Name="SaveAsButton"
+                    Content="另存為..."
+                    Height="38"
+                    HorizontalAlignment="Stretch"
+                    IsEnabled="False"
+                    Click="SaveAsButton_Click" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

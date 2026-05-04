@@ -208,12 +208,12 @@ public partial class MainWindow : Window
 
         try
         {
-            var tempPath = await DownloadImageAsync(uri);
-            var imageInfo = GetImageInfo(tempPath);
-            var displayName = GetDisplayNameFromUrl(uri, _sources.Count + 1);
+            var downloadedImage = await DownloadImageAsync(uri);
+            var imageInfo = GetImageInfo(downloadedImage.TempPath);
+            var displayName = GetDisplayNameFromUrl(downloadedImage.SourceUri, _sources.Count + 1);
 
-            _temporaryFiles.Add(tempPath);
-            _sources.Add(SourceImage.FromUrl(tempPath, uri.AbsoluteUri, displayName));
+            _temporaryFiles.Add(downloadedImage.TempPath);
+            _sources.Add(SourceImage.FromUrl(downloadedImage.TempPath, uri.AbsoluteUri, displayName));
 
             ImageUrlTextBox.Text = "";
             RefreshSelectionState();
@@ -231,9 +231,34 @@ public partial class MainWindow : Window
         }
     }
 
-    private static async Task<string> DownloadImageAsync(Uri uri)
+    private static async Task<DownloadedImage> DownloadImageAsync(Uri uri)
     {
-        using var response = await HttpClient.GetAsync(uri);
+        Exception? lastError = null;
+
+        foreach (var candidate in GetImageUriCandidates(uri))
+        {
+            try
+            {
+                var tempPath = await DownloadImageCandidateAsync(candidate);
+                return new DownloadedImage(tempPath, candidate);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+        }
+
+        throw new InvalidOperationException(lastError?.Message ?? "無法下載圖片。");
+    }
+
+    private static async Task<string> DownloadImageCandidateAsync(Uri uri)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        request.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+        request.Headers.TryAddWithoutValidation("Referer", $"{uri.Scheme}://{uri.Host}/");
+
+        using var response = await HttpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
         var mediaType = response.Content.Headers.ContentType?.MediaType;
@@ -256,8 +281,59 @@ public partial class MainWindow : Window
         await using var target = File.Create(tempPath);
         await source.CopyToAsync(target);
 
-        _ = GetImageInfo(tempPath);
+        try
+        {
+            _ = GetImageInfo(tempPath);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch
+            {
+                // If cleanup fails, the file is in the temp folder and can be overwritten later.
+            }
+
+            throw;
+        }
+
         return tempPath;
+    }
+
+    private static IEnumerable<Uri> GetImageUriCandidates(Uri uri)
+    {
+        yield return uri;
+
+        var cleanedUri = TryGetCleanImageUri(uri);
+        if (cleanedUri is not null && !cleanedUri.AbsoluteUri.Equals(uri.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+        {
+            yield return cleanedUri;
+        }
+    }
+
+    private static Uri? TryGetCleanImageUri(Uri uri)
+    {
+        var absolutePath = uri.GetLeftPart(UriPartial.Path);
+        var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif" };
+
+        foreach (var extension in extensions)
+        {
+            var index = absolutePath.IndexOf(extension, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var endIndex = index + extension.Length;
+            if (endIndex < absolutePath.Length && absolutePath[endIndex] == '@')
+            {
+                return new Uri(absolutePath[..endIndex]);
+            }
+        }
+
+        return null;
     }
 
     private async Task ConvertAllAsync()
@@ -465,6 +541,12 @@ public partial class MainWindow : Window
     private static string GetDisplayNameFromUrl(Uri uri, int index)
     {
         var fileName = Path.GetFileName(uri.LocalPath);
+        var modifierIndex = fileName.IndexOf('@');
+        if (modifierIndex > 0)
+        {
+            fileName = fileName[..modifierIndex];
+        }
+
         return string.IsNullOrWhiteSpace(fileName)
             ? $"url-image-{index}.png"
             : fileName;
@@ -520,4 +602,6 @@ public partial class MainWindow : Window
     }
 
     private readonly record struct ImageSize(int Width, int Height);
+
+    private readonly record struct DownloadedImage(string TempPath, Uri SourceUri);
 }

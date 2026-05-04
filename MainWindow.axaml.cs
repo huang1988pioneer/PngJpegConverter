@@ -10,17 +10,18 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using ImageMagick;
 using SkiaSharp;
 
 namespace PngToJpegConverter;
 
 public partial class MainWindow : Window
 {
-    private static readonly FilePickerFileType PngFileType = new("PNG 圖片")
+    private static readonly FilePickerFileType ImageFileType = new("圖片檔案")
     {
-        Patterns = new[] { "*.png" },
-        AppleUniformTypeIdentifiers = new[] { "public.png" },
-        MimeTypes = new[] { "image/png" }
+        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.avif", "*.bmp", "*.gif", "*.tif", "*.tiff", "*.heic", "*.heif" },
+        AppleUniformTypeIdentifiers = new[] { "public.image" },
+        MimeTypes = new[] { "image/*" }
     };
 
     private static readonly HttpClient HttpClient = new()
@@ -44,9 +45,9 @@ public partial class MainWindow : Window
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "選擇 PNG 圖片",
+            Title = "選擇圖片檔案",
             AllowMultiple = true,
-            FileTypeFilter = new[] { PngFileType }
+            FileTypeFilter = new[] { ImageFileType }
         });
 
         var paths = files
@@ -78,7 +79,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var paths = Directory.EnumerateFiles(folderPath, "*.png", searchOption);
+            var paths = Directory.EnumerateFiles(folderPath, "*.*", searchOption);
             AddLocalSources(paths);
         }
         catch (Exception ex)
@@ -150,22 +151,28 @@ public partial class MainWindow : Window
 
         foreach (var path in paths)
         {
-            if (!File.Exists(path) ||
-                !Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase) ||
-                !existing.Add(path))
+            if (!File.Exists(path) || !existing.Add(path))
             {
                 continue;
             }
 
-            _sources.Add(SourceImage.FromLocalFile(path));
-            added++;
+            try
+            {
+                _ = GetImageInfo(path);
+                _sources.Add(SourceImage.FromLocalFile(path));
+                added++;
+            }
+            catch
+            {
+                existing.Remove(path);
+            }
         }
 
         RefreshSelectionState();
 
         if (added == 0 && _sources.Count == 0)
         {
-            ShowError("沒有找到 PNG 檔案。");
+            ShowError("沒有找到可支援的圖片檔案。若檔案格式仍無法辨識，請手動安裝 ImageMagick 後再試。");
         }
         else if (added == 0)
         {
@@ -174,7 +181,7 @@ public partial class MainWindow : Window
         else
         {
             StatusText.Foreground = Brushes.ForestGreen;
-            StatusText.Text = $"已新增 {added:N0} 個 PNG 檔案。";
+            StatusText.Text = $"已新增 {added:N0} 個圖片檔案。";
         }
 
         LoadPreview();
@@ -185,14 +192,20 @@ public partial class MainWindow : Window
         var url = ImageUrlTextBox.Text?.Trim();
         if (string.IsNullOrWhiteSpace(url))
         {
-            ShowError("請先輸入圖片網址。");
+            ShowError("請先輸入圖片網址或本機圖片路徑。");
+            return;
+        }
+
+        if (File.Exists(url))
+        {
+            AddLocalImagePathFromTextBox(url);
             return;
         }
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            ShowError("請輸入有效的 http 或 https 圖片網址。");
+            ShowError("請輸入有效的 http/https 圖片網址，或貼上已下載圖片的本機完整路徑。");
             return;
         }
 
@@ -231,6 +244,31 @@ public partial class MainWindow : Window
         }
     }
 
+    private void AddLocalImagePathFromTextBox(string path)
+    {
+        try
+        {
+            _ = GetImageInfo(path);
+            var existing = new HashSet<string>(_sources.Select(source => source.Identity), StringComparer.OrdinalIgnoreCase);
+            if (!existing.Add(path))
+            {
+                ShowError("這個本機圖片已在清單中。");
+                return;
+            }
+
+            _sources.Add(SourceImage.FromLocalFile(path));
+            ImageUrlTextBox.Text = "";
+            RefreshSelectionState();
+            LoadPreview();
+            StatusText.Foreground = Brushes.ForestGreen;
+            StatusText.Text = $"已加入本機圖片：{Path.GetFileName(path)}";
+        }
+        catch (Exception ex)
+        {
+            ShowError($"無法加入本機圖片：{ex.Message}");
+        }
+    }
+
     private static async Task<DownloadedImage> DownloadImageAsync(Uri uri)
     {
         var errors = new List<string>();
@@ -257,7 +295,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        request.Headers.TryAddWithoutValidation("Accept", "image/jpeg,image/png,image/webp,image/bmp,image/gif,image/*,*/*;q=0.8");
+        request.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/jpeg,image/png,image/bmp,image/gif,image/*,*/*;q=0.8");
         request.Headers.TryAddWithoutValidation("Referer", GetRefererForImageHost(uri));
 
         using var response = await HttpClient.SendAsync(request);
@@ -266,7 +304,7 @@ public partial class MainWindow : Window
         var mediaType = response.Content.Headers.ContentType?.MediaType;
         if (mediaType is not null && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("網址回傳的內容不是圖片。");
+            throw new InvalidOperationException($"網址沒有直接回傳圖片，Content-Type 是 {mediaType}。請複製圖片本身的直接連結，或先下載後用「選擇 PNG 檔案」加入。");
         }
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "PngToJpegConverter");
@@ -279,9 +317,11 @@ public partial class MainWindow : Window
         }
 
         var tempPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}{extension}");
-        await using var source = await response.Content.ReadAsStreamAsync();
-        await using var target = File.Create(tempPath);
-        await source.CopyToAsync(target);
+        await using (var source = await response.Content.ReadAsStreamAsync())
+        await using (var target = File.Create(tempPath))
+        {
+            await source.CopyToAsync(target);
+        }
 
         try
         {
@@ -298,7 +338,7 @@ public partial class MainWindow : Window
                 // If cleanup fails, the file is in the temp folder and can be overwritten later.
             }
 
-            throw;
+            throw new InvalidOperationException("下載完成，但內容無法解碼成圖片。這通常表示網址回傳的是 HTML 頁面、不是直接圖片連結，或格式需要手動安裝 ImageMagick 才能支援。");
         }
 
         return tempPath;
@@ -397,7 +437,8 @@ public partial class MainWindow : Window
         try
         {
             var imageInfo = GetImageInfo(firstSource.FilePath);
-            using var previewStream = File.OpenRead(firstSource.FilePath);
+            var previewPath = GetPreviewPath(firstSource.FilePath);
+            using var previewStream = File.OpenRead(previewPath);
             PreviewImage.Source = new Bitmap(previewStream);
             ImageInfoText.Text = $"預覽：{firstSource.DisplayName}，{imageInfo.Width:N0} x {imageInfo.Height:N0} px";
         }
@@ -410,45 +451,92 @@ public partial class MainWindow : Window
 
     private static ImageSize GetImageInfo(string path)
     {
-        using var codec = SKCodec.Create(path);
-        if (codec is null)
+        try
         {
-            throw new InvalidOperationException("這不是有效的圖片。");
+            using var codec = SKCodec.Create(path);
+            if (codec is not null)
+            {
+                return new ImageSize(codec.Info.Width, codec.Info.Height);
+            }
+        }
+        catch
+        {
+            // Fall through to Magick.NET for formats Skia cannot decode, such as AVIF.
         }
 
-        return new ImageSize(codec.Info.Width, codec.Info.Height);
+        try
+        {
+            using var image = new MagickImage(path);
+            return new ImageSize((int)image.Width, (int)image.Height);
+        }
+        catch
+        {
+            throw new InvalidOperationException("這不是有效的圖片，或是不支援的圖片格式。若需要更完整格式支援，請手動安裝 ImageMagick 後再試。");
+        }
     }
 
     private static void ConvertImageToJpeg(string sourcePath, string outputPath, int quality)
     {
-        using var input = File.OpenRead(sourcePath);
-        using var bitmap = SKBitmap.Decode(input);
-        if (bitmap is null)
+        try
         {
-            throw new InvalidOperationException("無法讀取圖片。");
+            using var input = File.OpenRead(sourcePath);
+            using var bitmap = SKBitmap.Decode(input);
+            if (bitmap is null)
+            {
+                throw new InvalidOperationException("無法使用 SkiaSharp 讀取圖片。");
+            }
+
+            using var surface = SKSurface.Create(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var canvas = surface.Canvas;
+            canvas.Clear(SKColors.White);
+            canvas.DrawBitmap(bitmap, 0, 0);
+            canvas.Flush();
+
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100));
+            if (data is null)
+            {
+                throw new InvalidOperationException("無法建立 JPEG 圖片。");
+            }
+
+            EnsureOutputDirectory(outputPath);
+            using var output = File.Open(outputPath, FileMode.Create, FileAccess.Write);
+            data.SaveTo(output);
+            return;
         }
-
-        using var surface = SKSurface.Create(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
-        var canvas = surface.Canvas;
-        canvas.Clear(SKColors.White);
-        canvas.DrawBitmap(bitmap, 0, 0);
-        canvas.Flush();
-
-        using var image = surface.Snapshot();
-        using var data = image.Encode(SKEncodedImageFormat.Jpeg, Math.Clamp(quality, 1, 100));
-        if (data is null)
+        catch
         {
-            throw new InvalidOperationException("無法建立 JPEG 圖片。");
+            ConvertImageToJpegWithMagick(sourcePath, outputPath, quality);
         }
+    }
 
+    private static void ConvertImageToJpegWithMagick(string sourcePath, string outputPath, int quality)
+    {
+        try
+        {
+            using var image = new MagickImage(sourcePath);
+            image.AutoOrient();
+            image.BackgroundColor = MagickColors.White;
+            image.Alpha(AlphaOption.Remove);
+            image.Format = MagickFormat.Jpeg;
+            image.Quality = (uint)Math.Clamp(quality, 1, 100);
+
+            EnsureOutputDirectory(outputPath);
+            image.Write(outputPath);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"無法轉換此圖片格式。請手動安裝 ImageMagick 後再試。詳細資訊：{ex.Message}");
+        }
+    }
+
+    private static void EnsureOutputDirectory(string outputPath)
+    {
         var directory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
         }
-
-        using var output = File.Open(outputPath, FileMode.Create, FileAccess.Write);
-        data.SaveTo(output);
     }
 
     private string GetOutputPath(SourceImage source, ISet<string> usedOutputs)
@@ -568,6 +656,10 @@ public partial class MainWindow : Window
             "image/png" => ".png",
             "image/jpeg" => ".jpg",
             "image/jpg" => ".jpg",
+            "image/avif" => ".avif",
+            "image/heic" => ".heic",
+            "image/heif" => ".heif",
+            "image/tiff" => ".tif",
             "image/webp" => ".webp",
             "image/gif" => ".gif",
             "image/bmp" => ".bmp",
@@ -583,6 +675,25 @@ public partial class MainWindow : Window
         }
 
         return fileName.Trim();
+    }
+
+    private string GetPreviewPath(string sourcePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(sourcePath);
+            using var _ = new Bitmap(stream);
+            return sourcePath;
+        }
+        catch
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), "PngToJpegConverter");
+            Directory.CreateDirectory(tempDirectory);
+            var previewPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}-preview.jpg");
+            ConvertImageToJpegWithMagick(sourcePath, previewPath, 95);
+            _temporaryFiles.Add(previewPath);
+            return previewPath;
+        }
     }
 
     protected override void OnClosed(EventArgs e)

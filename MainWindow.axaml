@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PngToJpegConverter.MainWindow"
-        Title="PNG 轉 JPEG 批次轉換器"
+        Title="圖片轉 JPEG 批次轉換器"
         Width="900"
         Height="680"
         MinWidth="760"
@@ -10,11 +10,11 @@
         CanResize="True">
   <Grid RowDefinitions="Auto,*" Margin="28" RowSpacing="22">
     <StackPanel Spacing="6">
-      <TextBlock Text="PNG 轉 JPEG 批次轉換器"
+      <TextBlock Text="圖片轉 JPEG 批次轉換器"
                  FontSize="28"
                  FontWeight="SemiBold"
                  Foreground="#171A1F" />
-      <TextBlock Text="多選 PNG 檔案、選擇資料夾，或輸入圖片網址後轉換成 JPEG。"
+      <TextBlock Text="多選圖片檔案、選擇資料夾，或輸入圖片網址後轉換成 JPEG。"
                  FontSize="14"
                  Foreground="#626B79" />
     </StackPanel>
@@ -33,7 +33,7 @@
                        Foreground="#252A32" />
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
               <Button x:Name="ChooseFilesButton"
-                      Content="選擇 PNG 檔案"
+                      Content="選擇圖片檔案"
                       HorizontalAlignment="Stretch"
                       Height="38"
                       Click="ChooseFilesButton_Click" />
@@ -46,7 +46,7 @@
             </Grid>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
               <TextBox x:Name="ImageUrlTextBox"
-                       Watermark="輸入圖片網址，例如 https://example.com/image.png"
+                       Watermark="輸入圖片網址或本機圖片路徑"
                        Height="38"
                        VerticalContentAlignment="Center"
                        KeyDown="ImageUrlTextBox_KeyDown" />
@@ -137,7 +137,7 @@
                     HorizontalAlignment="Stretch"
                     Click="ChooseOutputFolderButton_Click" />
             <TextBlock x:Name="OutputFolderText"
-                       Text="未選擇時會輸出到每個本機 PNG 的原資料夾；網址圖片會輸出到程式資料夾"
+                       Text="未選擇時會輸出到每個本機圖片的原資料夾；網址圖片會輸出到程式資料夾"
                        TextWrapping="Wrap"
                        Foreground="#626B79" />
           </StackPanel>

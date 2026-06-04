@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PngToJpegConverter.MainWindow"
-        Title="圖片轉 JPEG 批次轉換器"
+        Title="圖片格式批次轉換器"
         Width="900"
         Height="680"
         MinWidth="760"
@@ -10,11 +10,11 @@
         CanResize="True">
   <Grid RowDefinitions="Auto,*" Margin="28" RowSpacing="22">
     <StackPanel Spacing="6">
-      <TextBlock Text="圖片轉 JPEG 批次轉換器"
+      <TextBlock Text="圖片格式批次轉換器"
                  FontSize="28"
                  FontWeight="SemiBold"
                  Foreground="#171A1F" />
-      <TextBlock Text="多選圖片檔案、選擇資料夾，或輸入圖片網址後轉換成 JPEG。"
+      <TextBlock Text="多選圖片檔案、選擇資料夾，或輸入圖片網址後轉換成 JPEG 或 PNG。"
                  FontSize="14"
                  Foreground="#626B79" />
     </StackPanel>
@@ -88,7 +88,8 @@
 
           <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="12">
             <StackPanel Spacing="8">
-              <TextBlock Text="JPEG 品質"
+              <TextBlock x:Name="QualityTitleText"
+                         Text="JPEG 品質"
                          FontWeight="SemiBold"
                          Foreground="#252A32" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
@@ -131,6 +132,16 @@
                        FontSize="18"
                        FontWeight="SemiBold"
                        Foreground="#252A32" />
+            <TextBlock Text="輸出格式"
+                       FontWeight="SemiBold"
+                       Foreground="#252A32" />
+            <ComboBox x:Name="OutputFormatComboBox"
+                      SelectedIndex="0"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OutputFormatComboBox_SelectionChanged">
+              <ComboBoxItem Content="JPEG" />
+              <ComboBoxItem Content="PNG" />
+            </ComboBox>
             <Button x:Name="ChooseOutputFolderButton"
                     Content="選擇輸出資料夾"
                     Height="38"

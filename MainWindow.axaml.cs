@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         UpdateQualityText();
+        UpdateOutputFormatUi();
         RefreshSelectionState();
     }
 
@@ -142,6 +143,12 @@ public partial class MainWindow : Window
             UpdateQualityText();
             StatusText.Text = "";
         }
+    }
+
+    private void OutputFormatComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        UpdateOutputFormatUi();
+        StatusText.Text = "";
     }
 
     private void AddLocalSources(IEnumerable<string> paths)
@@ -390,6 +397,7 @@ public partial class MainWindow : Window
         SetBusy(true);
         StatusText.Foreground = Brushes.ForestGreen;
 
+        var outputFormat = GetSelectedOutputFormat();
         var quality = (int)Math.Round(QualitySlider.Value);
         var usedOutputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var completed = 0;
@@ -399,12 +407,12 @@ public partial class MainWindow : Window
         {
             foreach (var source in _sources)
             {
-                var outputPath = GetOutputPath(source, usedOutputs);
+                var outputPath = GetOutputPath(source, outputFormat, usedOutputs);
                 StatusText.Text = $"正在轉換 {completed + failed + 1:N0} / {_sources.Count:N0}...";
 
                 try
                 {
-                    await Task.Run(() => ConvertImageToJpeg(source.FilePath, outputPath, quality));
+                    await Task.Run(() => ConvertImage(source.FilePath, outputPath, outputFormat, quality));
                     completed++;
                 }
                 catch
@@ -510,6 +518,63 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void ConvertImage(string sourcePath, string outputPath, OutputFormat outputFormat, int quality)
+    {
+        if (outputFormat == OutputFormat.Png)
+        {
+            ConvertImageToPng(sourcePath, outputPath);
+            return;
+        }
+
+        ConvertImageToJpeg(sourcePath, outputPath, quality);
+    }
+
+    private static void ConvertImageToPng(string sourcePath, string outputPath)
+    {
+        try
+        {
+            using var input = File.OpenRead(sourcePath);
+            using var bitmap = SKBitmap.Decode(input);
+            if (bitmap is null)
+            {
+                throw new InvalidOperationException("無法使用 SkiaSharp 讀取圖片。");
+            }
+
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            if (data is null)
+            {
+                throw new InvalidOperationException("無法建立 PNG 圖片。");
+            }
+
+            EnsureOutputDirectory(outputPath);
+            using var output = File.Open(outputPath, FileMode.Create, FileAccess.Write);
+            data.SaveTo(output);
+            return;
+        }
+        catch
+        {
+            ConvertImageToPngWithMagick(sourcePath, outputPath);
+        }
+    }
+
+    private static void ConvertImageToPngWithMagick(string sourcePath, string outputPath)
+    {
+        try
+        {
+            using var image = new MagickImage(sourcePath);
+            image.AutoOrient();
+            image.Format = MagickFormat.Png;
+
+            EnsureOutputDirectory(outputPath);
+            image.Write(outputPath);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"無法轉換此圖片格式。請手動安裝 ImageMagick 後再試。詳細資訊：{ex.Message}");
+        }
+    }
+
     private static void ConvertImageToJpegWithMagick(string sourcePath, string outputPath, int quality)
     {
         try
@@ -539,7 +604,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private string GetOutputPath(SourceImage source, ISet<string> usedOutputs)
+    private string GetOutputPath(SourceImage source, OutputFormat outputFormat, ISet<string> usedOutputs)
     {
         var directory = _outputFolderPath ??
             (source.IsUrlSource ? AppContext.BaseDirectory : Path.GetDirectoryName(source.FilePath)) ??
@@ -551,7 +616,8 @@ public partial class MainWindow : Window
             fileName = "converted-image";
         }
 
-        var candidate = Path.Combine(directory, $"{fileName}.jpg");
+        var extension = GetOutputExtension(outputFormat);
+        var candidate = Path.Combine(directory, $"{fileName}{extension}");
 
         if (!File.Exists(candidate) && usedOutputs.Add(candidate))
         {
@@ -561,7 +627,7 @@ public partial class MainWindow : Window
         var index = 1;
         while (true)
         {
-            var numbered = Path.Combine(directory, $"{fileName}-{index}.jpg");
+            var numbered = Path.Combine(directory, $"{fileName}-{index}{extension}");
             if (!File.Exists(numbered) && usedOutputs.Add(numbered))
             {
                 return numbered;
@@ -598,6 +664,7 @@ public partial class MainWindow : Window
         ChooseFilesButton.IsEnabled = !isBusy;
         ChooseInputFolderButton.IsEnabled = !isBusy;
         ChooseOutputFolderButton.IsEnabled = !isBusy;
+        OutputFormatComboBox.IsEnabled = !isBusy;
         AddUrlButton.IsEnabled = !isBusy;
         ImageUrlTextBox.IsEnabled = !isBusy;
         ClearButton.IsEnabled = !isBusy;
@@ -612,7 +679,35 @@ public partial class MainWindow : Window
 
     private void UpdateQualityText()
     {
-        QualityText.Text = $"{(int)Math.Round(QualitySlider.Value)}%";
+        QualityText.Text = GetSelectedOutputFormat() == OutputFormat.Jpeg
+            ? $"{(int)Math.Round(QualitySlider.Value)}%"
+            : "PNG";
+    }
+
+    private void UpdateOutputFormatUi()
+    {
+        var outputFormat = GetSelectedOutputFormat();
+        var isJpeg = outputFormat == OutputFormat.Jpeg;
+
+        QualityTitleText.Text = isJpeg ? "JPEG 品質" : "PNG 輸出";
+        QualitySlider.IsEnabled = isJpeg;
+        ConvertButton.Content = $"全部轉換成 {GetOutputFormatDisplayName(outputFormat)}";
+        UpdateQualityText();
+    }
+
+    private OutputFormat GetSelectedOutputFormat()
+    {
+        return OutputFormatComboBox.SelectedIndex == 1 ? OutputFormat.Png : OutputFormat.Jpeg;
+    }
+
+    private static string GetOutputExtension(OutputFormat outputFormat)
+    {
+        return outputFormat == OutputFormat.Png ? ".png" : ".jpg";
+    }
+
+    private static string GetOutputFormatDisplayName(OutputFormat outputFormat)
+    {
+        return outputFormat == OutputFormat.Png ? "PNG" : "JPEG";
     }
 
     private void DeleteTemporaryFiles()
@@ -724,4 +819,10 @@ public partial class MainWindow : Window
     private readonly record struct ImageSize(int Width, int Height);
 
     private readonly record struct DownloadedImage(string TempPath, Uri SourceUri);
+
+    private enum OutputFormat
+    {
+        Jpeg,
+        Png
+    }
 }

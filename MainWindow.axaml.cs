@@ -33,10 +33,12 @@ public partial class MainWindow : Window
     private readonly List<string> _temporaryFiles = new();
     private string? _inputFolderPath;
     private string? _outputFolderPath;
+    private bool _isInitialized;
 
     public MainWindow()
     {
         InitializeComponent();
+        _isInitialized = true;
         UpdateQualityText();
         UpdateOutputFormatUi();
         RefreshSelectionState();
@@ -138,7 +140,7 @@ public partial class MainWindow : Window
 
     private void QualitySlider_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == Slider.ValueProperty)
+        if (_isInitialized && e.Property == Slider.ValueProperty)
         {
             UpdateQualityText();
             StatusText.Text = "";
@@ -147,6 +149,11 @@ public partial class MainWindow : Window
 
     private void OutputFormatComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
         UpdateOutputFormatUi();
         StatusText.Text = "";
     }

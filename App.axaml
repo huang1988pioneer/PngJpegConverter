@@ -4,5 +4,149 @@
              RequestedThemeVariant="Light">
   <Application.Styles>
     <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Microsoft JhengHei UI, Segoe UI, Inter, sans-serif" />
+    </Style>
+
+    <!-- Primary action button -->
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="#2F6BFF" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="18,10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1F5AE6" />
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="#A8C0FF" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- Outline button -->
+    <Style Selector="Button.outline">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="#2F6BFF" />
+      <Setter Property="BorderBrush" Value="#2F6BFF" />
+      <Setter Property="BorderThickness" Value="1.5" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.outline:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F0F5FF" />
+      <Setter Property="BorderBrush" Value="#2F6BFF" />
+    </Style>
+
+    <!-- Ghost / secondary button -->
+    <Style Selector="Button.ghost">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="#3A4454" />
+      <Setter Property="BorderBrush" Value="#D5DCE8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F5F7FB" />
+      <Setter Property="BorderBrush" Value="#C3CCD9" />
+    </Style>
+
+    <!-- Danger outline -->
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="Foreground" Value="#E04B4B" />
+      <Setter Property="BorderBrush" Value="#F0C4C4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#FFF5F5" />
+    </Style>
+
+    <!-- Sidebar nav -->
+    <Style Selector="Button.nav">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#4A5568" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="14,12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#EAF0FB" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="#2F6BFF" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.nav.active:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2F6BFF" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- Icon-only remove -->
+    <Style Selector="Button.icon-remove">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#9AA3B2" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Button.icon-remove:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#FEECEC" />
+      <Setter Property="Foreground" Value="#E04B4B" />
+    </Style>
+
+    <!-- Conversion mode card -->
+    <Style Selector="Border.mode-card">
+      <Setter Property="Background" Value="#FAFBFD" />
+      <Setter Property="BorderBrush" Value="#E2E8F2" />
+      <Setter Property="BorderThickness" Value="1.5" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="16,18" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Border.mode-card.selected">
+      <Setter Property="Background" Value="#F3F7FF" />
+      <Setter Property="BorderBrush" Value="#2F6BFF" />
+    </Style>
+
+    <Style Selector="TextBox.field">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="#D5DCE8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="MinHeight" Value="36" />
+    </Style>
+
+    <Style Selector="ComboBox.field">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="#D5DCE8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="8,4" />
+    </Style>
+
+    <Style Selector="Slider.quality">
+      <Setter Property="Minimum" Value="1" />
+      <Setter Property="Maximum" Value="100" />
+    </Style>
   </Application.Styles>
 </Application>

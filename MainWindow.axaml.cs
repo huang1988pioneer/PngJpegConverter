@@ -1,15 +1,21 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using ImageMagick;
 using SkiaSharp;
 
@@ -19,33 +25,140 @@ public partial class MainWindow : Window
 {
     private static readonly FilePickerFileType ImageFileType = new("圖片檔案")
     {
-        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.avif", "*.bmp", "*.gif", "*.tif", "*.tiff", "*.heic", "*.heif" },
+        Patterns = new[]
+        {
+            "*.png", "*.jpg", "*.jpeg", "*.webp", "*.avif",
+            "*.bmp", "*.gif", "*.tif", "*.tiff", "*.heic", "*.heif"
+        },
         AppleUniformTypeIdentifiers = new[] { "public.image" },
         MimeTypes = new[] { "image/*" }
     };
 
-    private static readonly HttpClient HttpClient = new()
+    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        Timeout = TimeSpan.FromSeconds(30)
+        ".png", ".jpg", ".jpeg", ".webp", ".avif", ".bmp", ".gif",
+        ".tif", ".tiff", ".heic", ".heif"
     };
 
-    private readonly List<SourceImage> _sources = new();
+    private readonly ObservableCollection<ImageListItem> _items = new();
+    private readonly ObservableCollection<HistoryEntry> _history = new();
     private readonly List<string> _temporaryFiles = new();
-    private string? _inputFolderPath;
     private string? _outputFolderPath;
     private bool _isInitialized;
+    private bool _isConverting;
+    private CancellationTokenSource? _convertCts;
+    private ConversionMode _mode = ConversionMode.PngToJpeg;
 
     public MainWindow()
     {
         InitializeComponent();
+        FileListControl.ItemsSource = _items;
+        HistoryListControl.ItemsSource = _history;
         _isInitialized = true;
+        UpdateModeUi();
         UpdateQualityText();
-        UpdateOutputFormatUi();
         RefreshSelectionState();
+        UpdateProgress(0, 0, 0);
     }
 
-    private async void ChooseFilesButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    // ── Navigation ──────────────────────────────────────────────
+
+    private void NavConvertButton_Click(object? sender, RoutedEventArgs e) => ShowView(ViewPage.Convert);
+    private void NavHistoryButton_Click(object? sender, RoutedEventArgs e) => ShowView(ViewPage.History);
+    private void NavSettingsButton_Click(object? sender, RoutedEventArgs e) => ShowView(ViewPage.Settings);
+    private void NavAboutButton_Click(object? sender, RoutedEventArgs e) => ShowView(ViewPage.About);
+
+    private void ShowView(ViewPage page)
     {
+        ConvertView.IsVisible = page == ViewPage.Convert;
+        HistoryView.IsVisible = page == ViewPage.History;
+        SettingsView.IsVisible = page == ViewPage.Settings;
+        AboutView.IsVisible = page == ViewPage.About;
+
+        SetNavActive(NavConvertButton, page == ViewPage.Convert);
+        SetNavActive(NavHistoryButton, page == ViewPage.History);
+        SetNavActive(NavSettingsButton, page == ViewPage.Settings);
+        SetNavActive(NavAboutButton, page == ViewPage.About);
+
+        if (page == ViewPage.History)
+        {
+            HistoryEmptyText.IsVisible = _history.Count == 0;
+        }
+    }
+
+    private static void SetNavActive(Button button, bool active)
+    {
+        if (active)
+        {
+            if (!button.Classes.Contains("active"))
+            {
+                button.Classes.Add("active");
+            }
+        }
+        else
+        {
+            button.Classes.Remove("active");
+        }
+    }
+
+    // ── Conversion mode cards ───────────────────────────────────
+
+    private void ModePngToJpegCard_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_isConverting) return;
+        _mode = ConversionMode.PngToJpeg;
+        OutputFormatComboBox.SelectedIndex = 0;
+        UpdateModeUi();
+    }
+
+    private void ModeJpegToPngCard_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_isConverting) return;
+        _mode = ConversionMode.JpegToPng;
+        OutputFormatComboBox.SelectedIndex = 1;
+        UpdateModeUi();
+    }
+
+    private void UpdateModeUi()
+    {
+        var pngToJpeg = _mode == ConversionMode.PngToJpeg;
+
+        if (pngToJpeg)
+        {
+            if (!ModePngToJpegCard.Classes.Contains("selected"))
+                ModePngToJpegCard.Classes.Add("selected");
+            ModeJpegToPngCard.Classes.Remove("selected");
+
+            ModePngToJpegRadio.Stroke = Brush.Parse("#2F6BFF");
+            ModePngToJpegRadio.StrokeThickness = 5;
+            ModeJpegToPngRadio.Stroke = Brush.Parse("#C5CDD9");
+            ModeJpegToPngRadio.StrokeThickness = 1.5;
+        }
+        else
+        {
+            if (!ModeJpegToPngCard.Classes.Contains("selected"))
+                ModeJpegToPngCard.Classes.Add("selected");
+            ModePngToJpegCard.Classes.Remove("selected");
+
+            ModeJpegToPngRadio.Stroke = Brush.Parse("#2F6BFF");
+            ModeJpegToPngRadio.StrokeThickness = 5;
+            ModePngToJpegRadio.Stroke = Brush.Parse("#C5CDD9");
+            ModePngToJpegRadio.StrokeThickness = 1.5;
+        }
+
+        var isJpeg = GetSelectedOutputFormat() == OutputFormat.Jpeg;
+        QualitySlider.IsEnabled = isJpeg && !_isConverting;
+        QualityTitleText.Opacity = isJpeg ? 1 : 0.45;
+        QualityText.Opacity = isJpeg ? 1 : 0.45;
+        UpdateQualityText();
+    }
+
+    // ── File / folder pickers ───────────────────────────────────
+
+    private async void ChooseFilesButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_isConverting) return;
+
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "選擇圖片檔案",
@@ -54,15 +167,17 @@ public partial class MainWindow : Window
         });
 
         var paths = files
-            .Select(file => file.Path.LocalPath)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(f => f.Path.LocalPath)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
             .Cast<string>();
 
-        AddLocalSources(paths);
+        await AddLocalSourcesAsync(paths);
     }
 
-    private async void ChooseInputFolderButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void ChooseInputFolderButton_Click(object? sender, RoutedEventArgs e)
     {
+        if (_isConverting) return;
+
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "選擇輸入資料夾",
@@ -75,24 +190,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        _inputFolderPath = folderPath;
-        var searchOption = IncludeSubfoldersCheckBox.IsChecked == true
-            ? SearchOption.AllDirectories
-            : SearchOption.TopDirectoryOnly;
-
-        try
-        {
-            var paths = Directory.EnumerateFiles(folderPath, "*.*", searchOption);
-            AddLocalSources(paths);
-        }
-        catch (Exception ex)
-        {
-            ShowError($"無法讀取輸入資料夾：{ex.Message}");
-        }
+        await AddFolderAsync(folderPath);
     }
 
-    private async void ChooseOutputFolderButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void ChooseOutputFolderButton_Click(object? sender, RoutedEventArgs e)
     {
+        if (_isConverting) return;
+
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "選擇輸出資料夾",
@@ -106,26 +210,146 @@ public partial class MainWindow : Window
         }
 
         _outputFolderPath = folderPath;
-        OutputFolderText.Text = folderPath;
-        StatusText.Text = "";
+        SetOutputFolderDisplay(folderPath);
+        ShowStatus("", isError: false);
     }
 
-    private async void AddUrlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void SetOutputFolderDisplay(string? folderPath)
     {
-        await AddUrlSourceAsync();
-    }
-
-    private async void ImageUrlTextBox_KeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
+        if (string.IsNullOrWhiteSpace(folderPath))
         {
-            await AddUrlSourceAsync();
+            OutputFolderTextBox.Text = "";
+            ToolTip.SetTip(OutputFolderTextBox, "未選擇時輸出到原圖資料夾");
+            return;
+        }
+
+        // Always store and show the absolute full path.
+        var fullPath = Path.GetFullPath(folderPath);
+        _outputFolderPath = fullPath;
+        OutputFolderTextBox.Text = fullPath;
+        ToolTip.SetTip(OutputFolderTextBox, fullPath);
+    }
+
+    private void OpenOutputFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = _outputFolderPath;
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        {
+            ShowStatus("尚未設定有效的輸出資料夾。", isError: true);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"無法開啟資料夾：{ex.Message}", isError: true);
         }
     }
 
-    private async void ConvertButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void CopyOutputPathButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (_sources.Count == 0)
+        var path = _outputFolderPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ShowStatus("尚未設定輸出資料夾，沒有路徑可複製。", isError: true);
+            return;
+        }
+
+        try
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard is null)
+            {
+                ShowStatus("無法存取剪貼簿。", isError: true);
+                return;
+            }
+
+            await clipboard.SetTextAsync(path);
+            ShowStatus($"已複製完整路徑：{path}", isError: false);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"複製失敗：{ex.Message}", isError: true);
+        }
+    }
+
+    private void ClearButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_isConverting) return;
+        ClearSelection();
+    }
+
+    private void RemoveItemButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_isConverting) return;
+        if (sender is not Button { Tag: ImageListItem item }) return;
+
+        _items.Remove(item);
+        RefreshSelectionState();
+    }
+
+    // ── Drag & drop ─────────────────────────────────────────────
+
+    private void DropZone_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.Data.Contains(DataFormats.Files)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void DropZone_Drop(object? sender, DragEventArgs e)
+    {
+        if (_isConverting) return;
+
+        if (!e.Data.Contains(DataFormats.Files))
+        {
+            return;
+        }
+
+        var files = e.Data.GetFiles()?.ToList();
+        if (files is null || files.Count == 0)
+        {
+            return;
+        }
+
+        var paths = new List<string>();
+        foreach (var item in files)
+        {
+            var path = item.Path.LocalPath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            if (Directory.Exists(path))
+            {
+                await AddFolderAsync(path);
+            }
+            else if (File.Exists(path))
+            {
+                paths.Add(path);
+            }
+        }
+
+        if (paths.Count > 0)
+        {
+            await AddLocalSourcesAsync(paths);
+        }
+    }
+
+    // ── Convert / Cancel ────────────────────────────────────────
+
+    private async void ConvertButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_items.Count == 0 || _isConverting)
         {
             return;
         }
@@ -133,48 +357,113 @@ public partial class MainWindow : Window
         await ConvertAllAsync();
     }
 
-    private void ClearButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void CancelButton_Click(object? sender, RoutedEventArgs e)
     {
-        ClearSelection();
+        _convertCts?.Cancel();
+        ShowStatus("正在取消…", isError: false);
     }
+
+    // ── Quality / format UI ─────────────────────────────────────
 
     private void QualitySlider_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (_isInitialized && e.Property == Slider.ValueProperty)
         {
             UpdateQualityText();
-            StatusText.Text = "";
+        }
+    }
+
+    private void DefaultQualitySlider_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (_isInitialized && e.Property == Slider.ValueProperty)
+        {
+            var q = (int)Math.Round(DefaultQualitySlider.Value);
+            DefaultQualityText.Text = $"{q}%";
+            if (!_isConverting)
+            {
+                QualitySlider.Value = q;
+                UpdateQualityText();
+            }
         }
     }
 
     private void OutputFormatComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (!_isInitialized)
-        {
-            return;
-        }
+        if (!_isInitialized) return;
 
-        UpdateOutputFormatUi();
-        StatusText.Text = "";
+        _mode = GetSelectedOutputFormat() == OutputFormat.Jpeg
+            ? ConversionMode.PngToJpeg
+            : ConversionMode.JpegToPng;
+        UpdateModeUi();
     }
 
-    private void AddLocalSources(IEnumerable<string> paths)
+    private void UpdateQualityText()
     {
-        var existing = new HashSet<string>(_sources.Select(source => source.Identity), StringComparer.OrdinalIgnoreCase);
+        QualityText.Text = GetSelectedOutputFormat() == OutputFormat.Jpeg
+            ? $"{(int)Math.Round(QualitySlider.Value)}%"
+            : "—";
+    }
+
+    // ── Source management ───────────────────────────────────────
+
+    private async Task AddFolderAsync(string folderPath)
+    {
+        var searchOption = IncludeSubfoldersCheckBox.IsChecked == true
+            ? SearchOption.AllDirectories
+            : SearchOption.TopDirectoryOnly;
+
+        try
+        {
+            var paths = Directory.EnumerateFiles(folderPath, "*.*", searchOption)
+                .Where(IsSupportedImagePath);
+            await AddLocalSourcesAsync(paths);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"無法讀取資料夾：{ex.Message}", isError: true);
+        }
+    }
+
+    private async Task AddLocalSourcesAsync(IEnumerable<string> paths)
+    {
+        var existing = new HashSet<string>(_items.Select(i => i.Identity), StringComparer.OrdinalIgnoreCase);
         var added = 0;
+        var skipped = 0;
 
         foreach (var path in paths)
         {
-            if (!File.Exists(path) || !existing.Add(path))
+            if (!File.Exists(path) || !IsSupportedImagePath(path) || !existing.Add(path))
             {
+                if (File.Exists(path) && IsSupportedImagePath(path))
+                {
+                    skipped++;
+                }
                 continue;
             }
 
             try
             {
-                _ = GetImageInfo(path);
-                _sources.Add(SourceImage.FromLocalFile(path));
+                var info = GetImageInfo(path);
+                var fi = new FileInfo(path);
+                var item = new ImageListItem
+                {
+                    FilePath = path,
+                    Identity = path,
+                    FileName = Path.GetFileName(path),
+                    FormatLabel = GetFormatLabel(path),
+                    SizeLabel = FormatFileSize(fi.Length),
+                    Status = ConvertStatus.Pending,
+                    Width = info.Width,
+                    Height = info.Height,
+                    IsUrlSource = false,
+                    OutputBaseName = Path.GetFileName(path)
+                };
+
+                _items.Add(item);
                 added++;
+
+                // Load thumbnail off critical path
+                _ = LoadThumbnailAsync(item);
             }
             catch
             {
@@ -184,310 +473,233 @@ public partial class MainWindow : Window
 
         RefreshSelectionState();
 
-        if (added == 0 && _sources.Count == 0)
+        if (added == 0 && _items.Count == 0)
         {
-            ShowError("沒有找到可支援的圖片檔案。若檔案格式仍無法辨識，請手動安裝 ImageMagick 後再試。");
+            ShowStatus("沒有找到可支援的圖片檔案。", isError: true);
         }
         else if (added == 0)
         {
-            StatusText.Text = "沒有新增檔案，可能已在清單中。";
+            ShowStatus(skipped > 0 ? "沒有新增檔案，可能已在清單中。" : "沒有新增可支援的圖片。", isError: false);
         }
         else
         {
-            StatusText.Foreground = Brushes.ForestGreen;
-            StatusText.Text = $"已新增 {added:N0} 個圖片檔案。";
+            ShowStatus($"已新增 {added:N0} 個圖片檔案。", isError: false);
         }
 
-        LoadPreview();
+        await Task.CompletedTask;
     }
 
-    private async Task AddUrlSourceAsync()
-    {
-        var url = ImageUrlTextBox.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            ShowError("請先輸入圖片網址或本機圖片路徑。");
-            return;
-        }
-
-        if (File.Exists(url))
-        {
-            AddLocalImagePathFromTextBox(url);
-            return;
-        }
-
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            ShowError("請輸入有效的 http/https 圖片網址，或貼上已下載圖片的本機完整路徑。");
-            return;
-        }
-
-        if (_sources.Any(source => source.Identity.Equals(uri.AbsoluteUri, StringComparison.OrdinalIgnoreCase)))
-        {
-            ShowError("這個網址已在清單中。");
-            return;
-        }
-
-        SetBusy(true);
-        StatusText.Foreground = Brushes.ForestGreen;
-        StatusText.Text = "正在下載圖片...";
-
-        try
-        {
-            var downloadedImage = await DownloadImageAsync(uri);
-            var imageInfo = GetImageInfo(downloadedImage.TempPath);
-            var displayName = GetDisplayNameFromUrl(downloadedImage.SourceUri, _sources.Count + 1);
-
-            _temporaryFiles.Add(downloadedImage.TempPath);
-            _sources.Add(SourceImage.FromUrl(downloadedImage.TempPath, uri.AbsoluteUri, displayName));
-
-            ImageUrlTextBox.Text = "";
-            RefreshSelectionState();
-            LoadPreview();
-            StatusText.Foreground = Brushes.ForestGreen;
-            StatusText.Text = $"已加入網址圖片：{displayName}，{imageInfo.Width:N0} x {imageInfo.Height:N0} px";
-        }
-        catch (Exception ex)
-        {
-            ShowError($"無法加入網址圖片：{ex.Message}");
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
-
-    private void AddLocalImagePathFromTextBox(string path)
+    private async Task LoadThumbnailAsync(ImageListItem item)
     {
         try
         {
-            _ = GetImageInfo(path);
-            var existing = new HashSet<string>(_sources.Select(source => source.Identity), StringComparer.OrdinalIgnoreCase);
-            if (!existing.Add(path))
+            var thumb = await Task.Run(() => CreateThumbnail(item.FilePath, 72));
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ShowError("這個本機圖片已在清單中。");
-                return;
-            }
-
-            _sources.Add(SourceImage.FromLocalFile(path));
-            ImageUrlTextBox.Text = "";
-            RefreshSelectionState();
-            LoadPreview();
-            StatusText.Foreground = Brushes.ForestGreen;
-            StatusText.Text = $"已加入本機圖片：{Path.GetFileName(path)}";
-        }
-        catch (Exception ex)
-        {
-            ShowError($"無法加入本機圖片：{ex.Message}");
-        }
-    }
-
-    private static async Task<DownloadedImage> DownloadImageAsync(Uri uri)
-    {
-        var errors = new List<string>();
-
-        foreach (var candidate in GetImageUriCandidates(uri))
-        {
-            try
-            {
-                var tempPath = await DownloadImageCandidateAsync(candidate);
-                return new DownloadedImage(tempPath, candidate);
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"{candidate}：{ex.Message}");
-            }
-        }
-
-        throw new InvalidOperationException(errors.Count == 0
-            ? "無法下載圖片。"
-            : string.Join(Environment.NewLine, errors));
-    }
-
-    private static async Task<string> DownloadImageCandidateAsync(Uri uri)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        request.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/jpeg,image/png,image/bmp,image/gif,image/*,*/*;q=0.8");
-        request.Headers.TryAddWithoutValidation("Referer", GetRefererForImageHost(uri));
-
-        using var response = await HttpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var mediaType = response.Content.Headers.ContentType?.MediaType;
-        if (mediaType is not null && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"網址沒有直接回傳圖片，Content-Type 是 {mediaType}。請複製圖片本身的直接連結，或先下載後用「選擇 PNG 檔案」加入。");
-        }
-
-        var tempDirectory = Path.Combine(Path.GetTempPath(), "PngToJpegConverter");
-        Directory.CreateDirectory(tempDirectory);
-
-        var extension = GetExtensionFromMediaType(mediaType) ?? Path.GetExtension(uri.AbsolutePath);
-        if (string.IsNullOrWhiteSpace(extension) || extension.Length > 6)
-        {
-            extension = ".img";
-        }
-
-        var tempPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}{extension}");
-        await using (var source = await response.Content.ReadAsStreamAsync())
-        await using (var target = File.Create(tempPath))
-        {
-            await source.CopyToAsync(target);
-        }
-
-        try
-        {
-            _ = GetImageInfo(tempPath);
+                if (_items.Contains(item))
+                {
+                    item.Thumbnail = thumb;
+                }
+            });
         }
         catch
         {
-            try
-            {
-                File.Delete(tempPath);
-            }
-            catch
-            {
-                // If cleanup fails, the file is in the temp folder and can be overwritten later.
-            }
-
-            throw new InvalidOperationException("下載完成，但內容無法解碼成圖片。這通常表示網址回傳的是 HTML 頁面、不是直接圖片連結，或格式需要手動安裝 ImageMagick 才能支援。");
+            // Thumbnail is optional.
         }
-
-        return tempPath;
     }
 
-    private static IEnumerable<Uri> GetImageUriCandidates(Uri uri)
+    private static Bitmap? CreateThumbnail(string path, int maxSize)
     {
-        foreach (var cleanedUri in GetCleanImageUris(uri))
+        try
         {
-            if (!cleanedUri.AbsoluteUri.Equals(uri.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+            using var input = File.OpenRead(path);
+            using var codec = SKCodec.Create(input);
+            if (codec is null)
             {
-                yield return cleanedUri;
+                return CreateThumbnailWithMagick(path, maxSize);
             }
+
+            var info = codec.Info;
+            var scale = Math.Min((float)maxSize / info.Width, (float)maxSize / info.Height);
+            scale = Math.Min(scale, 1f);
+            var w = Math.Max(1, (int)(info.Width * scale));
+            var h = Math.Max(1, (int)(info.Height * scale));
+
+            using var bitmap = SKBitmap.Decode(path);
+            if (bitmap is null)
+            {
+                return CreateThumbnailWithMagick(path, maxSize);
+            }
+
+            using var resized = bitmap.Resize(new SKImageInfo(w, h), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+            if (resized is null) return null;
+
+            using var image = SKImage.FromBitmap(resized);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+            if (data is null) return null;
+
+            using var ms = new MemoryStream();
+            data.SaveTo(ms);
+            ms.Position = 0;
+            return new Bitmap(ms);
         }
-
-        yield return uri;
-    }
-
-    private static IEnumerable<Uri> GetCleanImageUris(Uri uri)
-    {
-        var absolutePath = uri.GetLeftPart(UriPartial.Path);
-        var extensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif" };
-
-        foreach (var extension in extensions)
+        catch
         {
-            var index = absolutePath.IndexOf(extension, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-            {
-                continue;
-            }
-
-            var endIndex = index + extension.Length;
-            if (endIndex < absolutePath.Length && absolutePath[endIndex] == '@')
-            {
-                yield return new Uri(absolutePath[..endIndex]);
-            }
+            return CreateThumbnailWithMagick(path, maxSize);
         }
     }
 
-    private static string GetRefererForImageHost(Uri uri)
+    private static Bitmap? CreateThumbnailWithMagick(string path, int maxSize)
     {
-        return uri.Host.EndsWith("hdslb.com", StringComparison.OrdinalIgnoreCase)
-            ? "https://www.bilibili.com/"
-            : $"{uri.Scheme}://{uri.Host}/";
+        try
+        {
+            using var image = new MagickImage(path);
+            image.AutoOrient();
+            image.Thumbnail((uint)maxSize, (uint)maxSize);
+            image.Format = MagickFormat.Png;
+            using var ms = new MemoryStream();
+            image.Write(ms);
+            ms.Position = 0;
+            return new Bitmap(ms);
+        }
+        catch
+        {
+            return null;
+        }
     }
+
+    // ── Conversion pipeline ─────────────────────────────────────
 
     private async Task ConvertAllAsync()
     {
+        _convertCts = new CancellationTokenSource();
+        var token = _convertCts.Token;
+        _isConverting = true;
         SetBusy(true);
-        StatusText.Foreground = Brushes.ForestGreen;
 
         var outputFormat = GetSelectedOutputFormat();
         var quality = (int)Math.Round(QualitySlider.Value);
         var usedOutputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var completed = 0;
         var failed = 0;
+        var total = _items.Count;
+        var cancelled = false;
+
+        foreach (var item in _items)
+        {
+            item.Status = ConvertStatus.Pending;
+        }
+
+        UpdateProgress(0, 0, total);
+        ShowStatus("開始轉換…", isError: false);
 
         try
         {
-            foreach (var source in _sources)
+            for (var i = 0; i < _items.Count; i++)
             {
-                var outputPath = GetOutputPath(source, outputFormat, usedOutputs);
-                StatusText.Text = $"正在轉換 {completed + failed + 1:N0} / {_sources.Count:N0}...";
+                if (token.IsCancellationRequested)
+                {
+                    cancelled = true;
+                    break;
+                }
+
+                var item = _items[i];
+                item.Status = ConvertStatus.Converting;
+                UpdateProgress(completed + failed, completed + failed, total);
 
                 try
                 {
-                    await Task.Run(() => ConvertImage(source.FilePath, outputPath, outputFormat, quality));
+                    var outputPath = GetOutputPath(item, outputFormat, usedOutputs);
+                    await Task.Run(() => ConvertImage(item.FilePath, outputPath, outputFormat, quality), token);
+                    item.Status = ConvertStatus.Done;
                     completed++;
+                }
+                catch (OperationCanceledException)
+                {
+                    item.Status = ConvertStatus.Pending;
+                    cancelled = true;
+                    break;
                 }
                 catch
                 {
+                    item.Status = ConvertStatus.Failed;
                     failed++;
                 }
+
+                var done = completed + failed;
+                UpdateProgress(done, done, total);
             }
 
-            StatusText.Foreground = failed == 0 ? Brushes.ForestGreen : Brushes.DarkOrange;
-            StatusText.Text = failed == 0
-                ? $"完成：已轉換 {completed:N0} 個檔案。"
-                : $"完成：成功 {completed:N0} 個，失敗 {failed:N0} 個。";
+            if (cancelled)
+            {
+                ShowStatus($"已取消：成功 {completed:N0}，失敗 {failed:N0}，剩餘 {total - completed - failed:N0}。", isError: false);
+            }
+            else if (failed == 0)
+            {
+                ShowStatus($"完成：已轉換 {completed:N0} 個檔案。", isError: false);
+            }
+            else
+            {
+                ShowStatus($"完成：成功 {completed:N0} 個，失敗 {failed:N0} 個。", isError: true);
+            }
+
+            _history.Insert(0, new HistoryEntry
+            {
+                Time = DateTime.Now,
+                ModeLabel = outputFormat == OutputFormat.Jpeg ? "→ JPEG" : "→ PNG",
+                SuccessCount = completed,
+                FailCount = failed,
+                OutputFolder = _outputFolderPath ?? "（原圖資料夾）"
+            });
+
+            if (!cancelled &&
+                OpenFolderAfterConvertCheckBox.IsChecked == true &&
+                completed > 0 &&
+                !string.IsNullOrWhiteSpace(_outputFolderPath) &&
+                Directory.Exists(_outputFolderPath))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _outputFolderPath,
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                    // Ignore open-folder failures after convert.
+                }
+            }
         }
         finally
         {
+            _isConverting = false;
+            _convertCts?.Dispose();
+            _convertCts = null;
             SetBusy(false);
         }
     }
 
-    private void LoadPreview()
+    private void UpdateProgress(int done, int numerator, int total)
     {
-        var firstSource = _sources.FirstOrDefault();
-        if (firstSource is null)
+        var percent = total == 0 ? 0 : (int)Math.Round(100.0 * done / total);
+        ConvertProgressBar.Value = percent;
+        ProgressPercentText.Text = $"{percent}%";
+        ProgressDetailText.Text = $"{numerator} / {total}";
+    }
+
+    // ── Image conversion (Skia / Magick) ────────────────────────
+
+    private static void ConvertImage(string sourcePath, string outputPath, OutputFormat outputFormat, int quality)
+    {
+        if (outputFormat == OutputFormat.Png)
         {
-            PreviewImage.Source = null;
-            ImageInfoText.Text = "等待選取圖片";
+            ConvertImageToPng(sourcePath, outputPath);
             return;
         }
 
-        try
-        {
-            var imageInfo = GetImageInfo(firstSource.FilePath);
-            var previewPath = GetPreviewPath(firstSource.FilePath);
-            using var previewStream = File.OpenRead(previewPath);
-            PreviewImage.Source = new Bitmap(previewStream);
-            ImageInfoText.Text = $"預覽：{firstSource.DisplayName}，{imageInfo.Width:N0} x {imageInfo.Height:N0} px";
-        }
-        catch (Exception ex)
-        {
-            PreviewImage.Source = null;
-            ShowError(ex.Message);
-        }
-    }
-
-    private static ImageSize GetImageInfo(string path)
-    {
-        try
-        {
-            using var codec = SKCodec.Create(path);
-            if (codec is not null)
-            {
-                return new ImageSize(codec.Info.Width, codec.Info.Height);
-            }
-        }
-        catch
-        {
-            // Fall through to Magick.NET for formats Skia cannot decode, such as AVIF.
-        }
-
-        try
-        {
-            using var image = new MagickImage(path);
-            return new ImageSize((int)image.Width, (int)image.Height);
-        }
-        catch
-        {
-            throw new InvalidOperationException("這不是有效的圖片，或是不支援的圖片格式。若需要更完整格式支援，請手動安裝 ImageMagick 後再試。");
-        }
+        ConvertImageToJpeg(sourcePath, outputPath, quality);
     }
 
     private static void ConvertImageToJpeg(string sourcePath, string outputPath, int quality)
@@ -501,7 +713,8 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("無法使用 SkiaSharp 讀取圖片。");
             }
 
-            using var surface = SKSurface.Create(new SKImageInfo(bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var surface = SKSurface.Create(new SKImageInfo(
+                bitmap.Width, bitmap.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var canvas = surface.Canvas;
             canvas.Clear(SKColors.White);
             canvas.DrawBitmap(bitmap, 0, 0);
@@ -517,23 +730,11 @@ public partial class MainWindow : Window
             EnsureOutputDirectory(outputPath);
             using var output = File.Open(outputPath, FileMode.Create, FileAccess.Write);
             data.SaveTo(output);
-            return;
         }
         catch
         {
             ConvertImageToJpegWithMagick(sourcePath, outputPath, quality);
         }
-    }
-
-    private static void ConvertImage(string sourcePath, string outputPath, OutputFormat outputFormat, int quality)
-    {
-        if (outputFormat == OutputFormat.Png)
-        {
-            ConvertImageToPng(sourcePath, outputPath);
-            return;
-        }
-
-        ConvertImageToJpeg(sourcePath, outputPath, quality);
     }
 
     private static void ConvertImageToPng(string sourcePath, string outputPath)
@@ -557,7 +758,6 @@ public partial class MainWindow : Window
             EnsureOutputDirectory(outputPath);
             using var output = File.Open(outputPath, FileMode.Create, FileAccess.Write);
             data.SaveTo(output);
-            return;
         }
         catch
         {
@@ -572,13 +772,12 @@ public partial class MainWindow : Window
             using var image = new MagickImage(sourcePath);
             image.AutoOrient();
             image.Format = MagickFormat.Png;
-
             EnsureOutputDirectory(outputPath);
             image.Write(outputPath);
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException($"無法轉換此圖片格式。請手動安裝 ImageMagick 後再試。詳細資訊：{ex.Message}");
+            throw new InvalidOperationException($"無法轉換此圖片格式：{ex.Message}");
         }
     }
 
@@ -592,13 +791,12 @@ public partial class MainWindow : Window
             image.Alpha(AlphaOption.Remove);
             image.Format = MagickFormat.Jpeg;
             image.Quality = (uint)Math.Clamp(quality, 1, 100);
-
             EnsureOutputDirectory(outputPath);
             image.Write(outputPath);
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException($"無法轉換此圖片格式。請手動安裝 ImageMagick 後再試。詳細資訊：{ex.Message}");
+            throw new InvalidOperationException($"無法轉換此圖片格式：{ex.Message}");
         }
     }
 
@@ -611,7 +809,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private string GetOutputPath(SourceImage source, OutputFormat outputFormat, ISet<string> usedOutputs)
+    private string GetOutputPath(ImageListItem source, OutputFormat outputFormat, ISet<string> usedOutputs)
     {
         var directory = _outputFolderPath ??
             (source.IsUrlSource ? AppContext.BaseDirectory : Path.GetDirectoryName(source.FilePath)) ??
@@ -623,7 +821,7 @@ public partial class MainWindow : Window
             fileName = "converted-image";
         }
 
-        var extension = GetOutputExtension(outputFormat);
+        var extension = outputFormat == OutputFormat.Png ? ".png" : ".jpg";
         var candidate = Path.Combine(directory, $"{fileName}{extension}");
 
         if (!File.Exists(candidate) && usedOutputs.Add(candidate))
@@ -644,62 +842,39 @@ public partial class MainWindow : Window
         }
     }
 
+    // ── UI state helpers ────────────────────────────────────────
+
     private void RefreshSelectionState()
     {
-        SelectedFilesList.ItemsSource = _sources.Select(source => source.DisplayName).ToList();
-        SourceSummaryText.Text = _sources.Count == 0
-            ? "尚未選擇檔案、資料夾或網址"
-            : $"已加入 {_sources.Count:N0} 張圖片";
-        InputFolderText.Text = _inputFolderPath is null ? "" : $"輸入資料夾：{_inputFolderPath}";
-        ConvertButton.IsEnabled = _sources.Count > 0;
+        SourceSummaryText.Text = _items.Count == 0
+            ? "尚未選擇檔案"
+            : $"已選擇 {_items.Count:N0} 個檔案";
+        ConvertButton.IsEnabled = _items.Count > 0 && !_isConverting;
+        UpdateProgress(0, 0, _items.Count);
     }
 
     private void ClearSelection()
     {
-        _sources.Clear();
-        _inputFolderPath = null;
-        PreviewImage.Source = null;
-        StatusText.Text = "";
-        ImageUrlTextBox.Text = "";
+        _items.Clear();
         RefreshSelectionState();
-        ImageInfoText.Text = "等待選取圖片";
+        ShowStatus("", isError: false);
         DeleteTemporaryFiles();
     }
 
     private void SetBusy(bool isBusy)
     {
-        ChooseFilesButton.IsEnabled = !isBusy;
-        ChooseInputFolderButton.IsEnabled = !isBusy;
-        ChooseOutputFolderButton.IsEnabled = !isBusy;
+        ConvertButton.IsEnabled = !isBusy && _items.Count > 0;
+        CancelButton.IsEnabled = isBusy;
         OutputFormatComboBox.IsEnabled = !isBusy;
-        AddUrlButton.IsEnabled = !isBusy;
-        ImageUrlTextBox.IsEnabled = !isBusy;
-        ClearButton.IsEnabled = !isBusy;
-        ConvertButton.IsEnabled = !isBusy && _sources.Count > 0;
+        QualitySlider.IsEnabled = !isBusy && GetSelectedOutputFormat() == OutputFormat.Jpeg;
     }
 
-    private void ShowError(string message)
+    private void ShowStatus(string message, bool isError)
     {
-        StatusText.Foreground = Brushes.Firebrick;
+        StatusText.Foreground = isError
+            ? Brush.Parse("#E04B4B")
+            : Brush.Parse("#2E9B5A");
         StatusText.Text = message;
-    }
-
-    private void UpdateQualityText()
-    {
-        QualityText.Text = GetSelectedOutputFormat() == OutputFormat.Jpeg
-            ? $"{(int)Math.Round(QualitySlider.Value)}%"
-            : "PNG";
-    }
-
-    private void UpdateOutputFormatUi()
-    {
-        var outputFormat = GetSelectedOutputFormat();
-        var isJpeg = outputFormat == OutputFormat.Jpeg;
-
-        QualityTitleText.Text = isJpeg ? "JPEG 品質" : "PNG 輸出";
-        QualitySlider.IsEnabled = isJpeg;
-        ConvertButton.Content = $"全部轉換成 {GetOutputFormatDisplayName(outputFormat)}";
-        UpdateQualityText();
     }
 
     private OutputFormat GetSelectedOutputFormat()
@@ -707,14 +882,68 @@ public partial class MainWindow : Window
         return OutputFormatComboBox.SelectedIndex == 1 ? OutputFormat.Png : OutputFormat.Jpeg;
     }
 
-    private static string GetOutputExtension(OutputFormat outputFormat)
+    private static bool IsSupportedImagePath(string path)
     {
-        return outputFormat == OutputFormat.Png ? ".png" : ".jpg";
+        var ext = Path.GetExtension(path);
+        return !string.IsNullOrEmpty(ext) && SupportedExtensions.Contains(ext);
     }
 
-    private static string GetOutputFormatDisplayName(OutputFormat outputFormat)
+    private static string GetFormatLabel(string path)
     {
-        return outputFormat == OutputFormat.Png ? "PNG" : "JPEG";
+        var ext = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
+        return ext switch
+        {
+            "JPG" => "JPEG",
+            "JPEG" => "JPEG",
+            "TIF" => "TIFF",
+            "TIFF" => "TIFF",
+            "HEIF" => "HEIC",
+            _ => ext
+        };
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.##} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.##} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):0.##} GB";
+    }
+
+    private static ImageSize GetImageInfo(string path)
+    {
+        try
+        {
+            using var codec = SKCodec.Create(path);
+            if (codec is not null)
+            {
+                return new ImageSize(codec.Info.Width, codec.Info.Height);
+            }
+        }
+        catch
+        {
+            // Fall through.
+        }
+
+        try
+        {
+            using var image = new MagickImage(path);
+            return new ImageSize((int)image.Width, (int)image.Height);
+        }
+        catch
+        {
+            throw new InvalidOperationException("這不是有效的圖片，或是不支援的圖片格式。");
+        }
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        foreach (var character in Path.GetInvalidFileNameChars())
+        {
+            fileName = fileName.Replace(character, '_');
+        }
+
+        return fileName.Trim();
     }
 
     private void DeleteTemporaryFiles()
@@ -730,106 +959,112 @@ public partial class MainWindow : Window
             }
             catch
             {
-                // Best effort cleanup for downloaded preview files.
+                // Best effort.
             }
         }
 
         _temporaryFiles.Clear();
     }
 
-    private static string GetDisplayNameFromUrl(Uri uri, int index)
-    {
-        var fileName = Path.GetFileName(uri.LocalPath);
-        var modifierIndex = fileName.IndexOf('@');
-        if (modifierIndex > 0)
-        {
-            fileName = fileName[..modifierIndex];
-        }
-
-        return string.IsNullOrWhiteSpace(fileName)
-            ? $"url-image-{index}.png"
-            : fileName;
-    }
-
-    private static string? GetExtensionFromMediaType(string? mediaType)
-    {
-        return mediaType?.ToLowerInvariant() switch
-        {
-            "image/png" => ".png",
-            "image/jpeg" => ".jpg",
-            "image/jpg" => ".jpg",
-            "image/avif" => ".avif",
-            "image/heic" => ".heic",
-            "image/heif" => ".heif",
-            "image/tiff" => ".tif",
-            "image/webp" => ".webp",
-            "image/gif" => ".gif",
-            "image/bmp" => ".bmp",
-            _ => null
-        };
-    }
-
-    private static string SanitizeFileName(string fileName)
-    {
-        foreach (var character in Path.GetInvalidFileNameChars())
-        {
-            fileName = fileName.Replace(character, '_');
-        }
-
-        return fileName.Trim();
-    }
-
-    private string GetPreviewPath(string sourcePath)
-    {
-        try
-        {
-            using var stream = File.OpenRead(sourcePath);
-            using var _ = new Bitmap(stream);
-            return sourcePath;
-        }
-        catch
-        {
-            var tempDirectory = Path.Combine(Path.GetTempPath(), "PngToJpegConverter");
-            Directory.CreateDirectory(tempDirectory);
-            var previewPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}-preview.jpg");
-            ConvertImageToJpegWithMagick(sourcePath, previewPath, 95);
-            _temporaryFiles.Add(previewPath);
-            return previewPath;
-        }
-    }
-
     protected override void OnClosed(EventArgs e)
     {
+        _convertCts?.Cancel();
         DeleteTemporaryFiles();
         base.OnClosed(e);
     }
 
-    private sealed record SourceImage(
-        string FilePath,
-        string Identity,
-        string DisplayName,
-        string OutputBaseName,
-        bool IsUrlSource)
-    {
-        public static SourceImage FromLocalFile(string path)
-        {
-            var fileName = Path.GetFileName(path);
-            return new SourceImage(path, path, fileName, fileName, false);
-        }
-
-        public static SourceImage FromUrl(string tempPath, string url, string displayName)
-        {
-            return new SourceImage(tempPath, url, $"網址：{displayName}", displayName, true);
-        }
-    }
+    private enum ViewPage { Convert, History, Settings, About }
+    private enum ConversionMode { PngToJpeg, JpegToPng }
+    private enum OutputFormat { Jpeg, Png }
 
     private readonly record struct ImageSize(int Width, int Height);
+}
 
-    private readonly record struct DownloadedImage(string TempPath, Uri SourceUri);
+public enum ConvertStatus
+{
+    Pending,
+    Converting,
+    Done,
+    Failed
+}
 
-    private enum OutputFormat
+public sealed class ImageListItem : INotifyPropertyChanged
+{
+    private ConvertStatus _status = ConvertStatus.Pending;
+    private Bitmap? _thumbnail;
+
+    public string FilePath { get; set; } = "";
+    public string Identity { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string FormatLabel { get; set; } = "";
+    public string SizeLabel { get; set; } = "";
+    public string OutputBaseName { get; set; } = "";
+    public bool IsUrlSource { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+
+    public Bitmap? Thumbnail
     {
-        Jpeg,
-        Png
+        get => _thumbnail;
+        set
+        {
+            if (_thumbnail != value)
+            {
+                _thumbnail = value;
+                OnPropertyChanged();
+            }
+        }
     }
+
+    public ConvertStatus Status
+    {
+        get => _status;
+        set
+        {
+            if (_status != value)
+            {
+                _status = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(StatusLabel));
+                OnPropertyChanged(nameof(StatusBrush));
+            }
+        }
+    }
+
+    public string StatusLabel => Status switch
+    {
+        ConvertStatus.Pending => "待轉換",
+        ConvertStatus.Converting => "轉換中",
+        ConvertStatus.Done => "已完成",
+        ConvertStatus.Failed => "失敗",
+        _ => "—"
+    };
+
+    public IBrush StatusBrush => Status switch
+    {
+        ConvertStatus.Pending => Brush.Parse("#7A8699"),
+        ConvertStatus.Converting => Brush.Parse("#2F6BFF"),
+        ConvertStatus.Done => Brush.Parse("#2E9B5A"),
+        ConvertStatus.Failed => Brush.Parse("#E04B4B"),
+        _ => Brush.Parse("#7A8699")
+    };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
+public sealed class HistoryEntry
+{
+    public DateTime Time { get; set; }
+    public string ModeLabel { get; set; } = "";
+    public int SuccessCount { get; set; }
+    public int FailCount { get; set; }
+    public string OutputFolder { get; set; } = "";
+
+    public string TimeLabel => Time.ToString("yyyy-MM-dd HH:mm:ss");
+    public string ResultLabel => $"{SuccessCount} / {FailCount}";
 }

@@ -1,193 +1,645 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:PngToJpegConverter"
         x:Class="PngToJpegConverter.MainWindow"
-        Title="圖片格式批次轉換器"
-        Width="900"
-        Height="680"
-        MinWidth="760"
-        MinHeight="600"
-        Background="#F6F7F9"
-        CanResize="True">
-  <Grid RowDefinitions="Auto,*" Margin="28" RowSpacing="22">
-    <StackPanel Spacing="6">
-      <TextBlock Text="圖片格式批次轉換器"
-                 FontSize="28"
-                 FontWeight="SemiBold"
-                 Foreground="#171A1F" />
-      <TextBlock Text="多選圖片檔案、選擇資料夾，或輸入圖片網址後轉換成 JPEG 或 PNG。"
-                 FontSize="14"
-                 Foreground="#626B79" />
-    </StackPanel>
+        x:DataType="local:MainWindow"
+        Title="圖片格式轉換器"
+        Width="1180"
+        Height="760"
+        MinWidth="980"
+        MinHeight="680"
+        Background="#EAF1FB"
+        CanResize="True"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="False">
 
-    <Grid Grid.Row="1" ColumnDefinitions="3*,2*" ColumnSpacing="22">
+  <Grid RowDefinitions="Auto,*" Margin="20" RowSpacing="14">
+
+    <!-- Header -->
+    <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+        <!-- App icon -->
+        <Border Width="44" Height="44" CornerRadius="12" ClipToBounds="True">
+          <Panel>
+            <Border Background="#5B9BFF" CornerRadius="12" />
+            <Border Background="#7EC8F5" CornerRadius="12" Margin="8,14,0,0" Opacity="0.95" />
+            <Border Background="#F4D35E" Width="14" Height="14" CornerRadius="7"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,6,6" />
+            <Border Background="White" Width="16" Height="12" CornerRadius="2"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.9" />
+          </Panel>
+        </Border>
+        <StackPanel Spacing="2" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="圖片格式轉換器"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="#1A2333"
+                       VerticalAlignment="Center" />
+            <Border Background="#DCE8FF"
+                    CornerRadius="6"
+                    Padding="8,2"
+                    VerticalAlignment="Center">
+              <TextBlock Text="v1.0.0"
+                         FontSize="11"
+                         Foreground="#3B6FD9"
+                         FontWeight="SemiBold" />
+            </Border>
+          </StackPanel>
+          <TextBlock Text="支援 PNG / JPEG 互轉，批量快速轉換"
+                     FontSize="12.5"
+                     Foreground="#6B778C" />
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+
+    <!-- Body -->
+    <Grid Grid.Row="1" ColumnDefinitions="200,*" ColumnSpacing="14">
+
+      <!-- Sidebar -->
       <Border Background="White"
-              BorderBrush="#D8DDE5"
-              BorderThickness="1"
-              CornerRadius="8"
-              Padding="18">
-        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="14">
-          <StackPanel Spacing="10">
-            <TextBlock Text="來源"
-                       FontSize="16"
-                       FontWeight="SemiBold"
-                       Foreground="#252A32" />
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-              <Button x:Name="ChooseFilesButton"
-                      Content="選擇圖片檔案"
-                      HorizontalAlignment="Stretch"
-                      Height="38"
-                      Click="ChooseFilesButton_Click" />
-              <Button x:Name="ChooseInputFolderButton"
-                      Grid.Column="1"
-                      Content="選擇輸入資料夾"
-                      HorizontalAlignment="Stretch"
-                      Height="38"
+              CornerRadius="16"
+              Padding="12,16"
+              BorderBrush="#DDE6F4"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <StackPanel Spacing="6">
+            <Button x:Name="NavConvertButton"
+                    Classes="nav active"
+                    Click="NavConvertButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="↻" FontSize="15" VerticalAlignment="Center" />
+                <TextBlock Text="格式轉換" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavHistoryButton"
+                    Classes="nav"
+                    Click="NavHistoryButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="◷" FontSize="15" VerticalAlignment="Center" />
+                <TextBlock Text="歷史記錄" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavSettingsButton"
+                    Classes="nav"
+                    Click="NavSettingsButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="⚙" FontSize="15" VerticalAlignment="Center" />
+                <TextBlock Text="設定" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="NavAboutButton"
+                    Classes="nav"
+                    Click="NavAboutButton_Click">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="ⓘ" FontSize="15" VerticalAlignment="Center" />
+                <TextBlock Text="關於我們" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- Drop zone -->
+          <Border x:Name="SidebarDropZone"
+                  Grid.Row="2"
+                  Background="#F7FAFE"
+                  BorderBrush="#A8C0E8"
+                  BorderThickness="1.5"
+                  CornerRadius="12"
+                  Padding="12,18"
+                  Margin="0,12,0,0"
+                  DragDrop.AllowDrop="True"
+                  DragDrop.DragOver="DropZone_DragOver"
+                  DragDrop.Drop="DropZone_Drop">
+            <StackPanel Spacing="10" HorizontalAlignment="Center">
+              <Border Width="42" Height="36" HorizontalAlignment="Center">
+                <Panel>
+                  <Border Background="#E8F0FE" CornerRadius="8" Width="36" Height="30"
+                          HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+                  <Border Background="#2F6BFF" CornerRadius="6" Width="28" Height="22"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Opacity="0.85" />
+                </Panel>
+              </Border>
+              <TextBlock Text="拖放圖片或資料夾到此處"
+                         FontSize="12"
+                         Foreground="#6B778C"
+                         TextAlignment="Center"
+                         TextWrapping="Wrap"
+                         MaxWidth="150" />
+              <Button Classes="outline"
+                      Content="選擇資料夾"
+                      HorizontalAlignment="Center"
+                      FontSize="12"
+                      Padding="12,6"
                       Click="ChooseInputFolderButton_Click" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-              <TextBox x:Name="ImageUrlTextBox"
-                       Watermark="輸入圖片網址或本機圖片路徑"
-                       Height="38"
-                       VerticalContentAlignment="Center"
-                       KeyDown="ImageUrlTextBox_KeyDown" />
-              <Button x:Name="AddUrlButton"
-                      Grid.Column="1"
-                      Content="加入網址"
-                      Width="96"
-                      Height="38"
-                      Click="AddUrlButton_Click" />
-            </Grid>
-            <CheckBox x:Name="IncludeSubfoldersCheckBox"
-                      Content="包含子資料夾"
-                      IsChecked="True"
-                      Foreground="#252A32" />
-          </StackPanel>
-
-          <StackPanel Grid.Row="1" Spacing="8">
-            <TextBlock x:Name="SourceSummaryText"
-                       Text="尚未選擇檔案、資料夾或網址"
-                       TextWrapping="Wrap"
-                       Foreground="#626B79" />
-            <TextBlock x:Name="InputFolderText"
-                       Text=""
-                       TextWrapping="Wrap"
-                       Foreground="#626B79" />
-          </StackPanel>
-
-          <Border Grid.Row="2"
-                  Background="#FAFBFC"
-                  BorderBrush="#E2E6ED"
-                  BorderThickness="1"
-                  CornerRadius="8"
-                  Padding="10">
-            <ListBox x:Name="SelectedFilesList"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Foreground="#252A32" />
+            </StackPanel>
           </Border>
+        </Grid>
+      </Border>
 
-          <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <!-- Main content host -->
+      <Panel Grid.Column="1">
+
+        <!-- ===== Convert view ===== -->
+        <Grid x:Name="ConvertView" RowDefinitions="*,Auto" RowSpacing="12">
+
+          <Grid ColumnDefinitions="*,1.15*" ColumnSpacing="12">
+
+            <!-- Left column: mode + output -->
+            <Border Background="White"
+                    CornerRadius="16"
+                    Padding="20"
+                    BorderBrush="#DDE6F4"
+                    BorderThickness="1">
+              <StackPanel Spacing="22">
+
+                <!-- Step 1 -->
+                <StackPanel Spacing="12">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Background="#2F6BFF" CornerRadius="10" Width="22" Height="22">
+                      <TextBlock Text="1" Foreground="White" FontSize="12" FontWeight="Bold"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="選擇轉換方式"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="#1A2333"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <!-- PNG → JPEG -->
+                    <Border x:Name="ModePngToJpegCard"
+                            Classes="mode-card selected"
+                            PointerPressed="ModePngToJpegCard_PointerPressed">
+                      <StackPanel Spacing="10" HorizontalAlignment="Center">
+                        <Border Background="#EAF1FF" CornerRadius="10" Width="48" Height="56"
+                                HorizontalAlignment="Center">
+                          <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <Border Background="#5B8DEF" Height="6" Margin="8,0" CornerRadius="2" Opacity="0.5" />
+                            <Border Background="#5B8DEF" Height="6" Margin="8,0" CornerRadius="2" Opacity="0.7" />
+                            <TextBlock Text="PNG" FontSize="11" FontWeight="Bold"
+                                       Foreground="#2F6BFF" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                          </StackPanel>
+                        </Border>
+                        <TextBlock Text="PNG → JPEG"
+                                   FontWeight="SemiBold"
+                                   FontSize="14"
+                                   Foreground="#1A2333"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="將 PNG 圖片轉換為 JPEG 格式"
+                                   FontSize="11.5"
+                                   Foreground="#7A8699"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="140" />
+                        <Ellipse x:Name="ModePngToJpegRadio"
+                                 Width="16" Height="16"
+                                 Stroke="#2F6BFF"
+                                 StrokeThickness="5"
+                                 Fill="White"
+                                 HorizontalAlignment="Center"
+                                 Margin="0,4,0,0" />
+                      </StackPanel>
+                    </Border>
+
+                    <!-- JPEG → PNG -->
+                    <Border x:Name="ModeJpegToPngCard"
+                            Grid.Column="1"
+                            Classes="mode-card"
+                            PointerPressed="ModeJpegToPngCard_PointerPressed">
+                      <StackPanel Spacing="10" HorizontalAlignment="Center">
+                        <Border Background="#EAF8EF" CornerRadius="10" Width="48" Height="56"
+                                HorizontalAlignment="Center">
+                          <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <Border Background="#3CB371" Height="6" Margin="8,0" CornerRadius="2" Opacity="0.5" />
+                            <Border Background="#3CB371" Height="6" Margin="8,0" CornerRadius="2" Opacity="0.7" />
+                            <TextBlock Text="JPEG" FontSize="11" FontWeight="Bold"
+                                       Foreground="#2E9B5A" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                          </StackPanel>
+                        </Border>
+                        <TextBlock Text="JPEG → PNG"
+                                   FontWeight="SemiBold"
+                                   FontSize="14"
+                                   Foreground="#1A2333"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="將 JPEG 圖片轉換為 PNG 格式"
+                                   FontSize="11.5"
+                                   Foreground="#7A8699"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="140" />
+                        <Ellipse x:Name="ModeJpegToPngRadio"
+                                 Width="16" Height="16"
+                                 Stroke="#C5CDD9"
+                                 StrokeThickness="1.5"
+                                 Fill="White"
+                                 HorizontalAlignment="Center"
+                                 Margin="0,4,0,0" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                </StackPanel>
+
+                <!-- Step 3 -->
+                <StackPanel Spacing="14">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Background="#2F6BFF" CornerRadius="10" Width="22" Height="22">
+                      <TextBlock Text="3" Foreground="White" FontSize="12" FontWeight="Bold"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="輸出設定"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="#1A2333"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <StackPanel Spacing="14">
+                    <Grid ColumnDefinitions="88,*" ColumnSpacing="12">
+                      <TextBlock Text="輸出格式"
+                                 VerticalAlignment="Center"
+                                 Foreground="#4A5568"
+                                 FontSize="13" />
+                      <ComboBox x:Name="OutputFormatComboBox"
+                                Grid.Column="1"
+                                Classes="field"
+                                HorizontalAlignment="Stretch"
+                                SelectedIndex="0"
+                                SelectionChanged="OutputFormatComboBox_SelectionChanged">
+                        <ComboBoxItem Content="JPEG (*.jpg; *.jpeg)" />
+                        <ComboBoxItem Content="PNG (*.png)" />
+                      </ComboBox>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="88,*" ColumnSpacing="12">
+                      <TextBlock x:Name="QualityTitleText"
+                                 Text="輸出品質"
+                                 VerticalAlignment="Center"
+                                 Foreground="#4A5568"
+                                 FontSize="13" />
+                      <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <Slider x:Name="QualitySlider"
+                                Classes="quality"
+                                Value="90"
+                                TickFrequency="1"
+                                IsSnapToTickEnabled="True"
+                                PropertyChanged="QualitySlider_PropertyChanged" />
+                        <TextBlock x:Name="QualityText"
+                                   Grid.Column="1"
+                                   Text="90%"
+                                   Width="42"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Foreground="#1A2333" />
+                      </Grid>
+                    </Grid>
+
+                    <!-- Full-width path so long Windows paths stay readable -->
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="輸出資料夾"
+                                 Foreground="#4A5568"
+                                 FontSize="13" />
+                      <Border Background="#F7FAFE"
+                              BorderBrush="#D5DCE8"
+                              BorderThickness="1"
+                              CornerRadius="8"
+                              Padding="10,8"
+                              MinHeight="52">
+                        <TextBox x:Name="OutputFolderTextBox"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 FontSize="12.5"
+                                 Foreground="#1A2333"
+                                 Watermark="未選擇時輸出到原圖資料夾"
+                                 MinHeight="36"
+                                 VerticalContentAlignment="Top" />
+                      </Border>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Classes="ghost"
+                                Content="瀏覽"
+                                Click="ChooseOutputFolderButton_Click" />
+                        <Button Classes="ghost"
+                                Content="開啟資料夾"
+                                Click="OpenOutputFolderButton_Click" />
+                        <Button x:Name="CopyOutputPathButton"
+                                Classes="ghost"
+                                Content="複製路徑"
+                                Click="CopyOutputPathButton_Click" />
+                      </StackPanel>
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <!-- Right column: file list -->
+            <Border Grid.Column="1"
+                    Background="White"
+                    CornerRadius="16"
+                    Padding="18"
+                    BorderBrush="#DDE6F4"
+                    BorderThickness="1"
+                    DragDrop.AllowDrop="True"
+                    DragDrop.DragOver="DropZone_DragOver"
+                    DragDrop.Drop="DropZone_Drop">
+              <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+
+                <!-- Step 2 header -->
+                <StackPanel Spacing="12">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Background="#2F6BFF" CornerRadius="10" Width="22" Height="22">
+                      <TextBlock Text="2" Foreground="White" FontSize="12" FontWeight="Bold"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="選擇圖片"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="#1A2333"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+
+                  <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                    <Button Classes="outline"
+                            Content="+ 新增檔案"
+                            Click="ChooseFilesButton_Click" />
+                    <Button Grid.Column="1"
+                            Classes="ghost"
+                            Content="📁 新增資料夾"
+                            Click="ChooseInputFolderButton_Click" />
+                    <Button Grid.Column="3"
+                            Classes="danger"
+                            Content="🗑 清除清單"
+                            Click="ClearButton_Click" />
+                  </Grid>
+
+                  <TextBlock x:Name="SourceSummaryText"
+                             Text="尚未選擇檔案"
+                             FontSize="12.5"
+                             Foreground="#6B778C" />
+                </StackPanel>
+
+                <!-- Table header -->
+                <Border Background="#F5F8FC"
+                        CornerRadius="8"
+                        Padding="12,8">
+                  <Grid ColumnDefinitions="*,90,80,80,36">
+                    <TextBlock Text="檔案名稱" FontSize="12" FontWeight="SemiBold" Foreground="#6B778C" />
+                    <TextBlock Grid.Column="1" Text="原始格式" FontSize="12" FontWeight="SemiBold" Foreground="#6B778C" />
+                    <TextBlock Grid.Column="2" Text="大小" FontSize="12" FontWeight="SemiBold" Foreground="#6B778C" />
+                    <TextBlock Grid.Column="3" Text="狀態" FontSize="12" FontWeight="SemiBold" Foreground="#6B778C" />
+                  </Grid>
+                </Border>
+
+                <!-- File list -->
+                <ScrollViewer Grid.Row="2"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                  <ItemsControl x:Name="FileListControl">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="local:ImageListItem">
+                        <Border BorderBrush="#EEF2F8"
+                                BorderThickness="0,0,0,1"
+                                Padding="8,6"
+                                Background="Transparent">
+                          <Grid ColumnDefinitions="*,90,80,80,36" ColumnSpacing="4">
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                              <Border Width="36" Height="36" CornerRadius="6" ClipToBounds="True"
+                                      Background="#F0F4FA">
+                                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                              </Border>
+                              <TextBlock Text="{Binding FileName}"
+                                         FontSize="13"
+                                         Foreground="#1A2333"
+                                         VerticalAlignment="Center"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxWidth="220" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding FormatLabel}"
+                                       FontSize="12.5"
+                                       Foreground="#4A5568"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding SizeLabel}"
+                                       FontSize="12.5"
+                                       Foreground="#4A5568"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3"
+                                       Text="{Binding StatusLabel}"
+                                       FontSize="12.5"
+                                       Foreground="{Binding StatusBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="4"
+                                    Classes="icon-remove"
+                                    Content="×"
+                                    FontSize="16"
+                                    Tag="{Binding}"
+                                    Click="RemoveItemButton_Click"
+                                    VerticalAlignment="Center" />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Grid>
+            </Border>
+          </Grid>
+
+          <!-- Bottom progress bar -->
+          <Border Grid.Row="1"
+                  Background="White"
+                  CornerRadius="16"
+                  Padding="18,14"
+                  BorderBrush="#DDE6F4"
+                  BorderThickness="1">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+              <StackPanel Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="轉換進度"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="#1A2333" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <ProgressBar x:Name="ConvertProgressBar"
+                               Minimum="0"
+                               Maximum="100"
+                               Value="0"
+                               Height="10"
+                               MinHeight="10"
+                               CornerRadius="5"
+                               Foreground="#2F6BFF"
+                               Background="#E6EBF4" />
+                  <TextBlock x:Name="ProgressPercentText"
+                             Grid.Column="1"
+                             Text="0%"
+                             Width="42"
+                             VerticalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Foreground="#1A2333" />
+                </Grid>
+                <TextBlock x:Name="ProgressDetailText"
+                           Text="0 / 0"
+                           FontSize="12"
+                           Foreground="#6B778C"
+                           HorizontalAlignment="Center" />
+                <TextBlock x:Name="StatusText"
+                           Text=""
+                           FontSize="12"
+                           Foreground="#2E9B5A"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+
+              <StackPanel Grid.Column="1"
+                          Spacing="8"
+                          VerticalAlignment="Center"
+                          MinWidth="150">
+                <Button x:Name="ConvertButton"
+                        Classes="primary"
+                        Content="↻ 開始轉換"
+                        Height="42"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="False"
+                        Click="ConvertButton_Click" />
+                <Button x:Name="CancelButton"
+                        Classes="ghost"
+                        Content="⏹ 取消轉換"
+                        Height="38"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="False"
+                        Click="CancelButton_Click" />
+              </StackPanel>
+            </Grid>
+          </Border>
+        </Grid>
+
+        <!-- ===== History view ===== -->
+        <Border x:Name="HistoryView"
+                IsVisible="False"
+                Background="White"
+                CornerRadius="16"
+                Padding="28"
+                BorderBrush="#DDE6F4"
+                BorderThickness="1">
+          <StackPanel Spacing="16">
+            <TextBlock Text="歷史記錄"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="#1A2333" />
+            <TextBlock Text="顯示最近的批次轉換結果。"
+                       FontSize="13"
+                       Foreground="#6B778C" />
+            <Border Background="#F5F8FC" CornerRadius="10" Padding="12,8">
+              <Grid ColumnDefinitions="2*,*,*,*" >
+                <TextBlock Text="時間" FontWeight="SemiBold" FontSize="12" Foreground="#6B778C" />
+                <TextBlock Grid.Column="1" Text="模式" FontWeight="SemiBold" FontSize="12" Foreground="#6B778C" />
+                <TextBlock Grid.Column="2" Text="成功 / 失敗" FontWeight="SemiBold" FontSize="12" Foreground="#6B778C" />
+                <TextBlock Grid.Column="3" Text="輸出" FontWeight="SemiBold" FontSize="12" Foreground="#6B778C" />
+              </Grid>
+            </Border>
+            <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+              <ItemsControl x:Name="HistoryListControl">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="local:HistoryEntry">
+                    <Border BorderBrush="#EEF2F8" BorderThickness="0,0,0,1" Padding="12,10">
+                      <Grid ColumnDefinitions="2*,*,*,*">
+                        <TextBlock Text="{Binding TimeLabel}" FontSize="13" Foreground="#1A2333" />
+                        <TextBlock Grid.Column="1" Text="{Binding ModeLabel}" FontSize="13" Foreground="#4A5568" />
+                        <TextBlock Grid.Column="2" Text="{Binding ResultLabel}" FontSize="13" Foreground="#4A5568" />
+                        <TextBlock Grid.Column="3" Text="{Binding OutputFolder}" FontSize="12"
+                                   Foreground="#6B778C" TextTrimming="CharacterEllipsis" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <TextBlock x:Name="HistoryEmptyText"
+                       Text="尚無轉換記錄。完成一次轉換後會顯示在這裡。"
+                       FontSize="13"
+                       Foreground="#9AA3B2"
+                       Margin="0,20,0,0" />
+          </StackPanel>
+        </Border>
+
+        <!-- ===== Settings view ===== -->
+        <Border x:Name="SettingsView"
+                IsVisible="False"
+                Background="White"
+                CornerRadius="16"
+                Padding="28"
+                BorderBrush="#DDE6F4"
+                BorderThickness="1">
+          <StackPanel Spacing="20" MaxWidth="520">
+            <TextBlock Text="設定"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="#1A2333" />
             <StackPanel Spacing="8">
-              <TextBlock x:Name="QualityTitleText"
-                         Text="JPEG 品質"
-                         FontWeight="SemiBold"
-                         Foreground="#252A32" />
+              <TextBlock Text="預設 JPEG 品質" FontWeight="SemiBold" Foreground="#1A2333" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <Slider x:Name="QualitySlider"
-                        Minimum="1"
-                        Maximum="100"
-                        Value="100"
-                        TickFrequency="1"
-                        IsSnapToTickEnabled="True"
-                        PropertyChanged="QualitySlider_PropertyChanged" />
-                <TextBlock x:Name="QualityText"
+                <Slider x:Name="DefaultQualitySlider"
+                        Minimum="1" Maximum="100" Value="90"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        PropertyChanged="DefaultQualitySlider_PropertyChanged" />
+                <TextBlock x:Name="DefaultQualityText"
                            Grid.Column="1"
-                           Text="100%"
-                           Width="44"
+                           Text="90%"
+                           Width="42"
                            VerticalAlignment="Center"
-                           TextAlignment="Right"
-                           Foreground="#252A32" />
+                           FontWeight="SemiBold" />
               </Grid>
             </StackPanel>
-            <Button x:Name="ClearButton"
-                    Grid.Column="1"
-                    Content="清除"
-                    Width="82"
-                    Height="38"
-                    VerticalAlignment="Bottom"
-                    Click="ClearButton_Click" />
-          </Grid>
-        </Grid>
-      </Border>
-
-      <Border Grid.Column="1"
-              Background="White"
-              BorderBrush="#D8DDE5"
-              BorderThickness="1"
-              CornerRadius="8"
-              Padding="22">
-        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="18">
-          <StackPanel Spacing="10">
-            <TextBlock Text="輸出"
-                       FontSize="18"
-                       FontWeight="SemiBold"
-                       Foreground="#252A32" />
-            <TextBlock Text="輸出格式"
-                       FontWeight="SemiBold"
-                       Foreground="#252A32" />
-            <ComboBox x:Name="OutputFormatComboBox"
-                      SelectedIndex="0"
-                      HorizontalAlignment="Stretch"
-                      SelectionChanged="OutputFormatComboBox_SelectionChanged">
-              <ComboBoxItem Content="JPEG" />
-              <ComboBoxItem Content="PNG" />
-            </ComboBox>
-            <Button x:Name="ChooseOutputFolderButton"
-                    Content="選擇輸出資料夾"
-                    Height="38"
-                    HorizontalAlignment="Stretch"
-                    Click="ChooseOutputFolderButton_Click" />
-            <TextBlock x:Name="OutputFolderText"
-                       Text="未選擇時會輸出到每個本機圖片的原資料夾；網址圖片會輸出到程式資料夾"
-                       TextWrapping="Wrap"
-                       Foreground="#626B79" />
+            <CheckBox x:Name="IncludeSubfoldersCheckBox"
+                      Content="新增資料夾時包含子資料夾"
+                      IsChecked="True"
+                      Foreground="#1A2333" />
+            <CheckBox x:Name="OpenFolderAfterConvertCheckBox"
+                      Content="轉換完成後開啟輸出資料夾"
+                      IsChecked="False"
+                      Foreground="#1A2333" />
+            <TextBlock Text="JPEG 轉換時，透明區域會以白底合成，避免黑底。"
+                       FontSize="12.5"
+                       Foreground="#6B778C"
+                       TextWrapping="Wrap" />
           </StackPanel>
+        </Border>
 
-          <StackPanel Grid.Row="1"
-                      VerticalAlignment="Center"
-                      Spacing="12">
-            <Border Background="#FAFBFC"
-                    BorderBrush="#E2E6ED"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Height="230"
-                    Padding="12">
-              <Image x:Name="PreviewImage"
-                     Stretch="Uniform" />
-            </Border>
-            <TextBlock x:Name="ImageInfoText"
-                       Text="等待選取圖片"
+        <!-- ===== About view ===== -->
+        <Border x:Name="AboutView"
+                IsVisible="False"
+                Background="White"
+                CornerRadius="16"
+                Padding="28"
+                BorderBrush="#DDE6F4"
+                BorderThickness="1">
+          <StackPanel Spacing="14" MaxWidth="560">
+            <TextBlock Text="關於我們"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="#1A2333" />
+            <TextBlock Text="圖片格式轉換器 v1.0.0"
                        FontSize="15"
                        FontWeight="SemiBold"
-                       TextAlignment="Center"
+                       Foreground="#2F6BFF" />
+            <TextBlock Text="一款輕量桌面工具，專為 PNG 與 JPEG 互轉與批量處理設計。支援拖放、資料夾掃描、品質調整與即時進度。"
+                       FontSize="13.5"
+                       Foreground="#4A5568"
                        TextWrapping="Wrap"
-                       Foreground="#252A32" />
-            <TextBlock x:Name="StatusText"
-                       Text=""
-                       TextWrapping="Wrap"
-                       TextAlignment="Center"
-                       Foreground="#1F7A4D" />
+                       LineHeight="22" />
+            <Border Background="#F5F8FC" CornerRadius="12" Padding="16" Margin="0,8,0,0">
+              <StackPanel Spacing="6">
+                <TextBlock Text="技術棧" FontWeight="SemiBold" Foreground="#1A2333" />
+                <TextBlock Text="• Avalonia UI · .NET 8" FontSize="13" Foreground="#4A5568" />
+                <TextBlock Text="• SkiaSharp · Magick.NET" FontSize="13" Foreground="#4A5568" />
+                <TextBlock Text="• 支援格式：PNG、JPEG、WebP、AVIF、BMP、GIF、TIFF、HEIC 等" FontSize="13" Foreground="#4A5568" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
           </StackPanel>
-
-          <Button x:Name="ConvertButton"
-                  Grid.Row="2"
-                  Content="全部轉換成 JPEG"
-                  Height="42"
-                  HorizontalAlignment="Stretch"
-                  IsEnabled="False"
-                  Click="ConvertButton_Click" />
-        </Grid>
-      </Border>
+        </Border>
+      </Panel>
     </Grid>
   </Grid>
 </Window>
